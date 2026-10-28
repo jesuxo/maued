@@ -10,19 +10,19 @@
     <link rel="shortcut icon" href="{{ URL::asset('build/images/favicon.ico') }}">
 
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>https://www.grupoabdul.com - SISDATO</title>
-    <meta name="description" content="Grupo Abdul">
-    <link rel="canonical" href="https://www.grupoabdul.com">
-    <meta property="og:title" content="https://www.grupoabdul.com - SISDATO">
-    <meta property="og:description" content=" Grupo Abdul">
+    <title>https://www.motoferias.com - SISDATO</title>
+    <meta name="description" content="Moto Ferias">
+    <link rel="canonical" href="https://www.motoferias.com">
+    <meta property="og:title" content="https://www.motoferias.com - SISDATO">
+    <meta property="og:description" content=" Moto Ferias">
     <meta property="og:type" content="WebPage">
-    <meta property="og:image" content="https://grupoabdul.com/build/images/logo.png">
-    <meta property="og:url" content="https://grupoabdul.com">
+    <meta property="og:image" content="https://motoferias.com/build/images/logo.png">
+    <meta property="og:url" content="https://motoferias.com">
 
-    <meta name="twitter:title" content="https://www.grupoabdul.com - SISDATO ">
-    <meta name="twitter:description" content=" Grupo Abdul ">
-    <meta name="twitter:site" content="@grupoabdul">
-    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"Grupo Abdul","description":" "}</script>
+    <meta name="twitter:title" content="https://www.motoferias.com - SISDATO ">
+    <meta name="twitter:description" content=" Moto Ferias ">
+    <meta name="twitter:site" content="@motoferias">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"Moto Ferias","description":" "}</script>
     <script
         src="https://code.jquery.com/jquery-3.7.0.min.js"
         integrity="sha256-2Pmvv0kuTBOenSvLm6bvfBSSHrUJ+3A7x6P5Ebd07/g="

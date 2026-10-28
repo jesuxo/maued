@@ -1,5 +1,5 @@
 @extends('layouts.master-auth')
-@section('title') Iniciar Grupo Abdul @endsection
+@section('title') Iniciar Moto Ferias @endsection
 
 @section('content')
     <style>.chat-message-welcome {
@@ -853,7 +853,7 @@
                 <div class="w-100" style="max-width: 380px; padding: 2rem;">
                     <!-- Logo -->
                     <div class="text-center mb-5">
-                        <img src="{{ URL::asset('build/images/logo-dark.png') }}" alt="Grupo Abdul" height="60" class="mb-3">
+                        <img src="{{ URL::asset('build/images/logo-dark.png') }}" alt="Moto Ferias" height="60" class="mb-3">
                         <h2 class="fw-bold mb-1" style="color: #0c192c;">¡Bienvenido!</h2>
                         <p class="text-muted">Inicia sesión para continuar</p>
                     </div>
@@ -962,7 +962,7 @@
                     <div class="text-center mt-5">
                         <p class="small text-muted mb-0">
                             <i class="ri-copyright-line align-middle me-1"></i>
-                            {{ date('Y') }} Grupo Abdul. Todos los derechos reservados.
+                            {{ date('Y') }} Moto Ferias. Todos los derechos reservados.
                         </p>
                         <p class="small text-muted">
                             Desarrollado por <a href="https://CelisWeb.com.ve" target="_blank" class="text-primary text-decoration-none">CelisWeb</a>
@@ -1083,7 +1083,7 @@
 
         // Fill demo credentials
         function fillDemoCredentials() {
-            document.getElementById('email').value = 'demo@grupoabdul.com';
+            document.getElementById('email').value = 'demo@motoferias.com';
             document.getElementById('password').value = 'Demo123';
 
             // Animación simple
