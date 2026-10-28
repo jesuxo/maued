@@ -982,7 +982,7 @@
         </div>
     </div>
 
-    <div id="app-chat-container" class="pusher-container pusher-mobile   "  >
+    <div id="app-chat-container" class="pusher-container pusher-mobile   " style="display: none" >
         <div id="app-bot-bot" data-fromtype="bot" data-fromid="bot" data-idconversation="null" data-id-question="1" data-id-flow="null" data-id-categ="null" data-id-sector="null" class="app-chat-container-top">
             <div class="chat-launcher app-chat-launcher"  style="display: block;"> <!-- onclick="activechat()" -->
                 <div class="chat-launcher-button">
