@@ -123,8 +123,8 @@ class SacompController extends Controller
         return response()->json(['success' => 'success', 'updated' => 1], 200);
     }
 
-    public function reportecompra(Request $request)
-    {
+    public function reportecompra(Request $request){
+
         $comercialid = session('comercialid');
         if(!$comercialid) {
             session(['comercialid' => 1]);

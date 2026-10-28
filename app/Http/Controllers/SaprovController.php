@@ -185,6 +185,27 @@ class SaprovController extends Controller
 
         $sucursales = Sasucursal::where('fk_comercial', $comercial)->get();
 
+        // === KPI Cuentas por Pagar del proveedor ===
+        $cxpKpi = Cwcxcprv::where('codprov', $codprov)
+            ->where('signo', 1)
+            ->whereRaw('(monto - abonado) > 0')
+            ->select(
+                DB::raw('COUNT(*) as total_facturas'),
+                DB::raw('SUM(monto - abonado) as deuda_total'),
+                DB::raw('SUM(CASE WHEN fechav < CURDATE() THEN (monto - abonado) ELSE 0 END) as deuda_vencida'),
+                DB::raw('SUM(CASE WHEN fechav < CURDATE() THEN 1 ELSE 0 END) as facturas_vencidas'),
+                DB::raw('MIN(fechav) as vencimiento_mas_antiguo')
+            )
+            ->first();
+
+        $cxpKpi = [
+            'total_facturas'          => (int)   ($cxpKpi->total_facturas ?? 0),
+            'deuda_total'             => (float) ($cxpKpi->deuda_total ?? 0),
+            'deuda_vencida'           => (float) ($cxpKpi->deuda_vencida ?? 0),
+            'facturas_vencidas'       => (int)   ($cxpKpi->facturas_vencidas ?? 0),
+            'vencimiento_mas_antiguo' => $cxpKpi->vencimiento_mas_antiguo ?? null,
+        ];
+
         return view('proveedores.productos-panel', compact(
             'proveedor',
             'fecha_desde',
@@ -195,8 +216,62 @@ class SaprovController extends Controller
             'kpi',
             'top_productos',
             'compras',
-            'sucursales' // Agregar esto
+            'sucursales',
+            'cxpKpi'
         ));
+    }
+
+    /**
+     * Cuentas por pagar de un proveedor en formato simple (para modal del panel de compras)
+     */
+    public function cxpProveedorSimple($codprov)
+    {
+        $facturas = Cwcxcprv::where('codprov', $codprov)
+            ->where('signo', 1)
+            ->whereRaw('(monto - abonado) > 0')
+            ->select(
+                'id',
+                'numerod',
+                'concepto',
+                'monto',
+                'abonado',
+                DB::raw('(monto - abonado) as deuda'),
+                'fecha',
+                'fechav'
+            )
+            ->orderBy('fechav', 'asc')
+            ->orderBy('fecha', 'asc')
+            ->get();
+
+        $hoy = Carbon::now()->startOfDay();
+
+        $rows = $facturas->map(function ($f) use ($hoy) {
+            $vence         = Carbon::parse($f->fechav)->startOfDay();
+            $diasVencidos  = $vence->lt($hoy) ? $vence->diffInDays($hoy) : 0;
+            $diasPorVencer = $vence->gte($hoy) ? $hoy->diffInDays($vence) : 0;
+
+            return [
+                'id'              => $f->id,
+                'numerod'         => $f->numerod,
+                'concepto'        => $f->concepto,
+                'monto'           => (float) $f->monto,
+                'abonado'         => (float) $f->abonado,
+                'deuda'           => (float) $f->deuda,
+                'fecha_fmt'       => Carbon::parse($f->fecha)->format('d/m/Y'),
+                'fechav_fmt'      => $vence->format('d/m/Y'),
+                'dias_vencidos'   => $diasVencidos,
+                'dias_por_vencer' => $diasPorVencer,
+            ];
+        });
+
+        return response()->json([
+            'success'       => true,
+            'facturas'      => $rows,
+            'total_deuda'   => $facturas->sum('deuda'),
+            'total_monto'   => $facturas->sum('monto'),
+            'total_abonado' => $facturas->sum('abonado'),
+            'total_facturas'=> $facturas->count(),
+        ]);
     }
 
     /**
@@ -437,12 +512,12 @@ class SaprovController extends Controller
             $comercial = 1;
         }
 
-        $sucursales = Sasucursal::where("fk_comercial", $comercial)->get();
+        $sucursales  = Sasucursal::where("fk_comercial", $comercial)->get();
         $sucursalarr = $sucursales->pluck('id');
         $sucursalIds = implode(",", $sucursalarr->toArray());
 
-        // Obtener todos los códigos de productos que ha comprado este proveedor
-        $codigos_productos = Saitemcom::where('codprov', $codprov)->whereRaw("fk_sucursal in ($sucursalIds)")
+        $codigos_productos = Saitemcom::where('codprov', $codprov)
+            ->whereRaw("fk_sucursal in ($sucursalIds)")
             ->whereIn('tipocom', ['H', 'I'])
             ->distinct()
             ->pluck('coditem')
@@ -452,12 +527,10 @@ class SaprovController extends Controller
             return collect([]);
         }
 
-        // Obtener productos con sus datos básicos
         $query = Saprod::whereIn('codprod', $codigos_productos)
             ->where('comercial', $comercial)
             ->select('codprod', 'descrip', 'marca', 'preciod', 'costod', 'costod2', 'costod3', 'existen', 'codinst');
 
-        // Aplicar filtro de productos con stock
         if ($filtro == 'con_stock') {
             $query->where('existen', '>', 0);
         } elseif ($filtro == 'sin_stock') {
@@ -466,7 +539,6 @@ class SaprovController extends Controller
 
         $productos = $query->get();
 
-        // Pre-cargar información de seriales para todos los productos
         $serialesPorProducto = [];
         foreach ($productos as $productoModel) {
             $serialesPorProducto[$productoModel->codprod] = $this->getSerialesCompraPorProducto(
@@ -480,15 +552,15 @@ class SaprovController extends Controller
 
         foreach ($productos as $productoModel) {
             $producto = new \stdClass();
-            $producto->codprod  = $productoModel->codprod;
-            $producto->descrip  = $productoModel->descrip;
-            $producto->marca    = $productoModel->marca;
-            $producto->preciod  = $productoModel->preciod;
-            $producto->costod   = $productoModel->costod;
-            $producto->costod2  = $productoModel->costod2;
-            $producto->costod3  = $productoModel->costod3;
-            $producto->existen  = $productoModel->existen;
-            $producto->codinst  = $productoModel->codinst;
+            $producto->codprod    = $productoModel->codprod;
+            $producto->descrip    = $productoModel->descrip;
+            $producto->marca      = $productoModel->marca;
+            $producto->preciod    = $productoModel->preciod;
+            $producto->costod     = $productoModel->costod;
+            $producto->costod2    = $productoModel->costod2;
+            $producto->costod3    = $productoModel->costod3;
+            $producto->existen    = $productoModel->existen;
+            $producto->codinst    = $productoModel->codinst;
 
             $costo              = (float) $producto->preciod;
             $precioVenta        = (float) $producto->costod3;
@@ -500,7 +572,7 @@ class SaprovController extends Controller
                 ->whereRaw("fk_sucursal in ($sucursalIds)")
                 ->where('codprov', $codprov)
                 ->whereIn('tipocom', ['H', 'I'])
-                ->whereBetween('fechae', [$fecha_desde.' 00:00:00.00', $fecha_hasta.' 23:59:58.00'])
+                ->whereBetween('fechae', [$fecha_desde . ' 00:00:00.00', $fecha_hasta . ' 23:59:59.00'])
                 ->select(DB::raw('SUM(preciod * cantidad * signo) as total'))
                 ->value('total') ?? 0;
 
@@ -509,15 +581,14 @@ class SaprovController extends Controller
                 ->where('codprov', $codprov)
                 ->whereRaw("fk_sucursal in ($sucursalIds)")
                 ->whereIn('tipocom', ['H', 'I'])
-                ->whereBetween('fechae', [$fecha_desde.' 00:00:00.00', $fecha_hasta.' 23:59:58.00'])
+                ->whereBetween('fechae', [$fecha_desde . ' 00:00:00.00', $fecha_hasta . ' 23:59:59.00'])
                 ->select(DB::raw('SUM(cantidad * signo) as total'))
                 ->value('total') ?? 0;
 
-            // ========== VENTAS FILTRADAS POR PROVEEDOR ==========
+            // ========== VENTAS ==========
             $infoSerial = $this->getProductoSerialInfo($producto->codprod, $comercial);
 
             if ($infoSerial['usa_serial']) {
-                // Productos CON serial: solo contar ventas de seriales comprados a este proveedor
                 $serialesCompra = $serialesPorProducto[$producto->codprod] ?? collect([]);
 
                 if ($serialesCompra->isNotEmpty()) {
@@ -529,56 +600,56 @@ class SaprovController extends Controller
                         $sucursalIds
                     );
 
-                    $producto->unidades_vendidas = $itemsVenta->where('signo', '>', 0)->sum('cantidad');
-                    $producto->total_ventas = $itemsVenta->sum(function ($item) {
-                        return $item->costodoriginal * $item->cantidad * $item->signo;
+                    // SUM(signo): cuenta 1 por serial vendido, resta devoluciones
+                    $producto->unidades_vendidas = $itemsVenta->sum(function ($item) {
+                        return (int) $item->signo;
                     });
 
-                    // Calcular última venta para días sin venta
+                    $producto->total_ventas = $itemsVenta->sum(function ($item) {
+                        return $item->costodoriginal * $item->signo;
+                    });
+
                     $ultimaVentaItem = $itemsVenta->where('signo', '>', 0)->sortByDesc('FechaE')->first();
                     if ($ultimaVentaItem) {
-                        $fecha_ultima_venta = Carbon::parse($ultimaVentaItem->FechaE);
-                        $producto->dias_sin_venta = $fecha_ultima_venta->diffInDays(now());
+                        $producto->dias_sin_venta = Carbon::parse($ultimaVentaItem->FechaE)->diffInDays(now());
                     } else {
                         $producto->dias_sin_venta = null;
                     }
                 } else {
                     $producto->unidades_vendidas = 0;
-                    $producto->total_ventas = 0;
-                    $producto->dias_sin_venta = null;
+                    $producto->total_ventas      = 0;
+                    $producto->dias_sin_venta    = null;
                 }
             } else {
-                // Productos SIN serial: no podemos distinguir, se cuentan todas las ventas
                 $producto->unidades_vendidas = Saitemfac::where('CodItem', $producto->codprod)
                     ->whereRaw("fk_sucursal in ($sucursalIds)")
                     ->whereIn('TipoFac', ['A', 'B'])
-                    ->whereBetween('FechaE', [$fecha_desde.' 00:00:00.00', $fecha_hasta.' 23:59:58.00'])
-                    ->select(DB::raw('SUM( cantidad * signo) as total'))
+                    ->where('esserv', 0)
+                    ->whereBetween('FechaE', [$fecha_desde . ' 00:00:00.00', $fecha_hasta . ' 23:59:59.00'])
+                    ->select(DB::raw('SUM(cantidad * signo) as total'))
                     ->value('total') ?? 0;
 
                 $producto->total_ventas = Saitemfac::where('CodItem', $producto->codprod)
                     ->whereRaw("fk_sucursal in ($sucursalIds)")
                     ->whereIn('TipoFac', ['A', 'B'])
-                    ->whereBetween('FechaE', [$fecha_desde.' 00:00:00.00', $fecha_hasta.' 23:59:58.00'])
+                    ->where('esserv', 0)
+                    ->whereBetween('FechaE', [$fecha_desde . ' 00:00:00.00', $fecha_hasta . ' 23:59:59.00'])
                     ->select(DB::raw('SUM(costodoriginal * cantidad * signo) as total'))
                     ->value('total') ?? 0;
 
-                // Calcular última venta para días sin venta
                 $ultima_venta = Saitemfac::where('CodItem', $producto->codprod)
                     ->whereRaw("fk_sucursal in ($sucursalIds)")
                     ->whereIn('TipoFac', ['A'])
+                    ->where('esserv', 0)
                     ->orderBy('FechaE', 'desc')
                     ->first();
 
-                if ($ultima_venta) {
-                    $fecha_ultima_venta = Carbon::parse($ultima_venta->FechaE);
-                    $producto->dias_sin_venta = $fecha_ultima_venta->diffInDays(now());
-                } else {
-                    $producto->dias_sin_venta = null;
-                }
+                $producto->dias_sin_venta = $ultima_venta
+                    ? Carbon::parse($ultima_venta->FechaE)->diffInDays(now())
+                    : null;
             }
 
-            // ========== EXISTENCIA ACTUAL TOTAL ==========
+            // ========== EXISTENCIA ACTUAL ==========
             $producto->existencia_actual = Saexis::where('codprod', $producto->codprod)
                 ->whereRaw("fk_sucursal in ($sucursalIds)")
                 ->sum('existen');
@@ -594,19 +665,19 @@ class SaprovController extends Controller
                 ->first();
 
             if ($ultima_compra) {
-                $producto->ultima_compra_fecha = $ultima_compra->fechae;
-                $producto->ultima_compra_dias = Carbon::parse($ultima_compra->fechae)->diffInDays(now());
+                $producto->ultima_compra_fecha     = $ultima_compra->fechae;
+                $producto->ultima_compra_dias      = Carbon::parse($ultima_compra->fechae)->diffInDays(now());
                 $producto->ultima_compra_documento = $ultima_compra->numerod;
-                $producto->ultima_compra_id = $ultima_compra->compra ? $ultima_compra->compra->id : null;
-                $producto->ultima_compra_cantidad = $ultima_compra->cantidad;
-                $producto->ultima_compra_precio = $ultima_compra->preciod;
+                $producto->ultima_compra_id        = $ultima_compra->compra ? $ultima_compra->compra->id : null;
+                $producto->ultima_compra_cantidad  = $ultima_compra->cantidad;
+                $producto->ultima_compra_precio    = $ultima_compra->preciod;
             } else {
-                $producto->ultima_compra_fecha = null;
-                $producto->ultima_compra_dias = null;
+                $producto->ultima_compra_fecha     = null;
+                $producto->ultima_compra_dias      = null;
                 $producto->ultima_compra_documento = null;
-                $producto->ultima_compra_id = null;
-                $producto->ultima_compra_cantidad = null;
-                $producto->ultima_compra_precio = null;
+                $producto->ultima_compra_id        = null;
+                $producto->ultima_compra_cantidad  = null;
+                $producto->ultima_compra_precio    = null;
             }
 
             // ========== EXISTENCIAS POR SUCURSAL ==========
@@ -617,8 +688,8 @@ class SaprovController extends Controller
                     ->sum('existen');
 
                 $producto->existencias_por_sucursal[$sucursal->id] = [
-                    'nombre' => $sucursal->descrip,
-                    'existencia' => $existencia
+                    'nombre'     => $sucursal->descrip,
+                    'existencia' => $existencia,
                 ];
             }
 
@@ -628,7 +699,7 @@ class SaprovController extends Controller
                 : 0;
 
             // ========== DÍAS DE STOCK ==========
-            $dias_periodo = Carbon::parse($fecha_desde.' 00:00:00.00')->diffInDays(Carbon::parse($fecha_hasta.' 23:59:58.00')) + 1;
+            $dias_periodo = Carbon::parse($fecha_desde . ' 00:00:00.00')->diffInDays(Carbon::parse($fecha_hasta . ' 23:59:59.00')) + 1;
             $venta_diaria_promedio = $dias_periodo > 0 ? $producto->unidades_vendidas / $dias_periodo : 0;
             $producto->dias_stock = $venta_diaria_promedio > 0
                 ? $producto->existencia_actual / $venta_diaria_promedio
@@ -642,43 +713,21 @@ class SaprovController extends Controller
             $productosArray[] = $producto;
         }
 
-        // Convertir a colección
         $productos = collect($productosArray);
 
-        // Ordenar según criterio
         switch ($orden) {
-            case 'vendido_desc':
-                $productos = $productos->sortByDesc('total_ventas');
-                break;
-            case 'vendido_asc':
-                $productos = $productos->sortBy('total_ventas');
-                break;
-            case 'comprado_desc':
-                $productos = $productos->sortByDesc('total_compras');
-                break;
-            case 'comprado_asc':
-                $productos = $productos->sortBy('total_compras');
-                break;
-            case 'existencia_desc':
-                $productos = $productos->sortByDesc('existencia_actual');
-                break;
-            case 'existencia_asc':
-                $productos = $productos->sortBy('existencia_actual');
-                break;
-            case 'rotacion_desc':
-                $productos = $productos->sortByDesc('rotacion');
-                break;
-            case 'rentabilidad_desc':
-                $productos = $productos->sortByDesc('margen');
-                break;
-            case 'unidades_desc':
-                $productos = $productos->sortByDesc('unidades_vendidas');
-                break;
-            default:
-                $productos = $productos->sortByDesc('total_ventas');
+            case 'vendido_desc':      $productos = $productos->sortByDesc('total_ventas'); break;
+            case 'vendido_asc':       $productos = $productos->sortBy('total_ventas'); break;
+            case 'comprado_desc':     $productos = $productos->sortByDesc('total_compras'); break;
+            case 'comprado_asc':      $productos = $productos->sortBy('total_compras'); break;
+            case 'existencia_desc':   $productos = $productos->sortByDesc('existencia_actual'); break;
+            case 'existencia_asc':    $productos = $productos->sortBy('existencia_actual'); break;
+            case 'rotacion_desc':     $productos = $productos->sortByDesc('rotacion'); break;
+            case 'rentabilidad_desc': $productos = $productos->sortByDesc('margen'); break;
+            case 'unidades_desc':     $productos = $productos->sortByDesc('unidades_vendidas'); break;
+            default:                  $productos = $productos->sortByDesc('total_ventas');
         }
 
-        // También pasar las sucursales a la vista
         view()->share('sucursales', $sucursales);
 
         return $productos->values();
@@ -732,7 +781,7 @@ class SaprovController extends Controller
             return collect([]);
         }
 
-        $array = DB::table('saitemfac as ifac')
+        return DB::table('saitemfac as ifac')
             ->join('saseprfac as sf', function ($join) {
                 $join->on('ifac.TipoFac', '=', 'sf.TipoFac')
                     ->on('ifac.NumeroD', '=', 'sf.NumeroD')
@@ -742,18 +791,18 @@ class SaprovController extends Controller
             ->whereIn('sf.NroSerial', $seriales)
             ->where('ifac.CodItem', $codprod)
             ->whereIn('ifac.TipoFac', ['A', 'B'])
-            ->whereBetween('ifac.FechaE', [$fecha_desde.' 00:00:00.00', $fecha_hasta.' 23:59:58.00'])
+            ->where('ifac.esserv', 0)
+            ->whereBetween('ifac.FechaE', [$fecha_desde . ' 00:00:00.00', $fecha_hasta . ' 23:59:59.00'])
             ->whereRaw("ifac.fk_sucursal in ($sucursalIds)")
             ->select(
                 'ifac.id',
-                'ifac.cantidad',
+                'sf.NroSerial',
+                DB::raw('1 AS cantidad'),       // 1 unidad por serial (fix JOIN inflado)
                 'ifac.costodoriginal',
                 'ifac.signo',
                 'ifac.FechaE'
             )
             ->get();
-
-        return  $array;
     }
 
     /**
@@ -768,11 +817,10 @@ class SaprovController extends Controller
             $comercial = 1;
         }
 
-        $sucursales = Sasucursal::where("fk_comercial", $comercial)->get();
+        $sucursales  = Sasucursal::where("fk_comercial", $comercial)->get();
         $sucursalarr = $sucursales->pluck('id');
         $sucursalIds = implode(",", $sucursalarr->toArray());
 
-        // Obtener todos los códigos de productos que ha comprado este proveedor
         $codigos_productos = Saitemcom::where('codprov', $codprov)
             ->whereRaw("fk_sucursal in ($sucursalIds)")
             ->whereIn('tipocom', ['H', 'I'])
@@ -782,60 +830,54 @@ class SaprovController extends Controller
 
         if (empty($codigos_productos)) {
             return [
-                'total_productos' => 0,
-                'total_compras' => 0,
-                'total_ventas' => 0,
+                'total_productos'  => 0,
+                'total_compras'    => 0,
+                'total_ventas'     => 0,
                 'valor_inventario' => 0,
                 'existencia_total' => 0,
-                'rotacion' => 0,
-                'compras_30dias' => 0,
-                'ventas_30dias' => 0,
+                'rotacion'         => 0,
+                'compras_30dias'   => 0,
+                'ventas_30dias'    => 0,
             ];
         }
 
-        // Total de productos
         $total_productos = count($codigos_productos);
 
-        // Total de compras en el período
         $total_compras = Saitemcom::where('codprov', $codprov)
             ->whereRaw("fk_sucursal in ($sucursalIds)")
             ->whereIn('tipocom', ['H', 'I'])
-            ->whereBetween('fechae', [$fecha_desde.' 00:00:00.00', $fecha_hasta.' 23:59:58.00'])
+            ->whereBetween('fechae', [$fecha_desde . ' 00:00:00.00', $fecha_hasta . ' 23:59:59.00'])
             ->select(DB::raw('SUM(preciod * cantidad * signo) as total'))
             ->value('total') ?? 0;
 
-        // ========== TOTAL DE VENTAS FILTRADAS POR PROVEEDOR ==========
+        // ========== VENTAS DEL PERÍODO ==========
         $total_ventas = 0;
         foreach ($codigos_productos as $codprod) {
             $infoSerial = $this->getProductoSerialInfo($codprod, $comercial);
 
             if ($infoSerial['usa_serial']) {
-                if(!isset($serialesCompra[$codprod]))
+                if (!isset($serialesCompra[$codprod]))
                     $serialesCompra[$codprod] = $this->getSerialesCompraPorProducto($codprov, $codprod, $sucursalIds);
 
                 if ($serialesCompra[$codprod]->isNotEmpty()) {
+                    $itemsVenta = $this->getItemsVentaPorSeriales(
+                        $codprod,
+                        $serialesCompra[$codprod],
+                        $fecha_desde,
+                        $fecha_hasta,
+                        $sucursalIds
+                    );
 
-                    $ventasProducto = DB::table('saitemfac as ifac')
-                        ->join('saseprfac as sf', function ($join) {
-                            $join->on('ifac.TipoFac', '=', 'sf.TipoFac')
-                                ->on('ifac.NumeroD', '=', 'sf.NumeroD')
-                                ->on('ifac.NroLinea', '=', 'sf.NroLinea')
-                                ->on('ifac.CodItem', '=', 'sf.CodItem');
-                        })
-                        ->whereIn('sf.NroSerial', $serialesCompra[$codprod])
-                        ->where('ifac.CodItem', $codprod)
-                        ->whereIn('ifac.TipoFac', ['A'])
-                        ->whereRaw("ifac.fk_sucursal in ($sucursalIds) and date_format(ifac.FechaE,'%Y-%m-%d') between '$fecha_desde 00:00:00.00' and '$fecha_hasta 23:59:58.00'")
-                        ->select(DB::raw('SUM(ifac.costodoriginal * ifac.cantidad * ifac.signo) as total'))
-                        ->get();
-                    $total_ventas += $ventasProducto[0]->total;
+                    $total_ventas += $itemsVenta->sum(function ($item) {
+                        return $item->costodoriginal * $item->signo;
+                    });
                 }
             } else {
-                // Productos sin serial: sumamos todas las ventas
                 $ventasProducto = Saitemfac::where('CodItem', $codprod)
                     ->whereRaw("fk_sucursal in ($sucursalIds)")
                     ->whereIn('TipoFac', ['A', 'B'])
-                    ->whereBetween('FechaE', [$fecha_desde.' 00:00:00.00', $fecha_hasta.' 23:59:58.00'])
+                    ->where('esserv', 0)
+                    ->whereBetween('FechaE', [$fecha_desde . ' 00:00:00.00', $fecha_hasta . ' 23:59:59.00'])
                     ->select(DB::raw('SUM(costodoriginal * cantidad * signo) as total'))
                     ->value('total') ?? 0;
 
@@ -843,27 +885,24 @@ class SaprovController extends Controller
             }
         }
 
-        // Valor total del inventario
         $valor_inventario = Saprod::whereIn('codprod', $codigos_productos)
             ->where('comercial', $comercial)
             ->select(DB::raw('SUM(existen * preciodpro) as total'))
             ->value('total') ?? 0;
 
-        // Existencia total
         $existencia_total = Saprod::whereIn('codprod', $codigos_productos)
             ->where('comercial', $comercial)
             ->sum('existen');
 
-        // Rotación de inventario
-        $dias_periodo = Carbon::parse($fecha_desde.' 00:00:00.00')->diffInDays(Carbon::parse($fecha_hasta.' 23:59:58.00')) + 1;
+        $dias_periodo = Carbon::parse($fecha_desde . ' 00:00:00.00')->diffInDays(Carbon::parse($fecha_hasta . ' 23:59:59.00')) + 1;
         $venta_diaria_promedio = $dias_periodo > 0 ? $total_ventas / $dias_periodo : 0;
         $rotacion = $venta_diaria_promedio > 0 && $existencia_total > 0
             ? $existencia_total / $venta_diaria_promedio
             : 0;
 
-        // Compras y ventas últimos 30 días
-        $fecha_30dias = '2026-03-16';//now()->subDays(30)->format('Y-m-d');
-        $hoy = '2026-03-16';//now()->format('Y-m-d');
+        // ========== COMPRAS Y VENTAS 30 DÍAS ==========
+        $fecha_30dias = now()->subDays(30)->format('Y-m-d');
+        $hoy          = now()->format('Y-m-d');
 
         $compras_30dias = Saitemcom::where('codprov', $codprov)
             ->whereRaw("fk_sucursal in ($sucursalIds)")
@@ -872,36 +911,32 @@ class SaprovController extends Controller
             ->select(DB::raw('SUM(cantidad * preciod * signo) as total'))
             ->value('total') ?? 0;
 
-        // Ventas últimos 30 días (filtradas por proveedor)
         $ventas_30dias = 0;
         foreach ($codigos_productos as $codprod) {
             $infoSerial = $this->getProductoSerialInfo($codprod, $comercial);
 
             if ($infoSerial['usa_serial']) {
-                if(!isset($serialesCompra[$codprod]))
+                if (!isset($serialesCompra[$codprod]))
                     $serialesCompra[$codprod] = $this->getSerialesCompraPorProducto($codprov, $codprod, $sucursalIds);
 
                 if ($serialesCompra[$codprod]->isNotEmpty()) {
-                    $ventasProducto = DB::table('saitemfac as ifac')
-                        ->join('saseprfac as sf', function ($join) {
-                            $join->on('ifac.TipoFac', '=', 'sf.TipoFac')
-                                ->on('ifac.NumeroD', '=', 'sf.NumeroD')
-                                ->on('ifac.NroLinea', '=', 'sf.NroLinea')
-                                ->on('ifac.CodItem', '=', 'sf.CodItem');
-                        })
-                        ->whereIn('sf.NroSerial', $serialesCompra[$codprod])
-                        ->where('ifac.CodItem', $codprod)
-                        ->whereIn('ifac.TipoFac', ['A'])
-                        ->whereRaw("ifac.fk_sucursal in ($sucursalIds) and date_format(ifac.FechaE,'%Y-%m-%d') between '$fecha_desde 00:00:00.00' and '$fecha_hasta 23:59:58.00'")
-                        ->select(DB::raw('SUM(ifac.costodoriginal * ifac.cantidad * ifac.signo) as total'))
-                        ->get();
+                    $itemsVenta30 = $this->getItemsVentaPorSeriales(
+                        $codprod,
+                        $serialesCompra[$codprod],
+                        $fecha_30dias,
+                        $hoy,
+                        $sucursalIds
+                    );
 
-                    $ventas_30dias += $ventasProducto[0]->total;
+                    $ventas_30dias += $itemsVenta30->sum(function ($item) {
+                        return $item->costodoriginal * $item->signo;
+                    });
                 }
             } else {
                 $ventasProducto = Saitemfac::where('CodItem', $codprod)
                     ->whereRaw("fk_sucursal in ($sucursalIds)")
                     ->whereIn('TipoFac', ['A', 'B'])
+                    ->where('esserv', 0)
                     ->whereBetween('FechaE', [$fecha_30dias, $hoy])
                     ->select(DB::raw('SUM(costodoriginal * cantidad * signo) as total'))
                     ->value('total') ?? 0;
@@ -911,14 +946,14 @@ class SaprovController extends Controller
         }
 
         return [
-            'total_productos' => $total_productos,
-            'total_compras' => $total_compras,
-            'total_ventas' => $total_ventas,
+            'total_productos'  => $total_productos,
+            'total_compras'    => $total_compras,
+            'total_ventas'     => $total_ventas,
             'valor_inventario' => $valor_inventario,
             'existencia_total' => $existencia_total,
-            'rotacion' => $rotacion,
-            'compras_30dias' => $compras_30dias,
-            'ventas_30dias' => $ventas_30dias,
+            'rotacion'         => $rotacion,
+            'compras_30dias'   => $compras_30dias,
+            'ventas_30dias'    => $ventas_30dias,
         ];
     }
 
@@ -1064,14 +1099,12 @@ class SaprovController extends Controller
         $sucursales = Sasucursal::where('fk_comercial', $comercial)->get();
         $sucursalIds = implode(',', $sucursales->pluck('id')->toArray());
 
-        // Mapa id => nombre
         $sucursalesMap = $sucursales->pluck('descrip', 'id')->toArray();
 
-        // Detectar si el producto usa serial
         $infoSerial = $this->getProductoSerialInfo($codprod, $comercial);
 
-        $ventasPorDia  = collect();
-        $ventasPorSuc  = collect();
+        $ventasPorDia = collect();
+        $ventasPorSuc = collect();
 
         if ($infoSerial['usa_serial']) {
             $serialesCompra = $this->getSerialesCompraPorProducto($codprov, $codprod, $sucursalIds);
@@ -1079,6 +1112,7 @@ class SaprovController extends Controller
             if ($serialesCompra->isNotEmpty()) {
 
                 // ----- Por día -----
+                // FIX: SUM(signo) en vez de SUM(cantidad * signo)
                 $ventasPorDia = DB::table('saitemfac as ifac')
                     ->join('saseprfac as sf', function ($join) {
                         $join->on('ifac.TipoFac', '=', 'sf.TipoFac')
@@ -1089,11 +1123,12 @@ class SaprovController extends Controller
                     ->whereIn('sf.NroSerial', $serialesCompra)
                     ->where('ifac.CodItem', $codprod)
                     ->whereIn('ifac.TipoFac', ['A', 'B'])
+                    ->where('ifac.esserv', 0)
                     ->whereRaw("ifac.fk_sucursal in ($sucursalIds)")
                     ->whereBetween('ifac.FechaE', [$fecha_desde . ' 00:00:00', $fecha_hasta . ' 23:59:59'])
                     ->select(
                         DB::raw("DATE(ifac.FechaE) as fecha"),
-                        DB::raw("SUM(ifac.cantidad * ifac.signo) as unidades")
+                        DB::raw("SUM(ifac.signo) as unidades")
                     )
                     ->groupBy(DB::raw("DATE(ifac.FechaE)"))
                     ->orderBy('fecha')
@@ -1111,11 +1146,12 @@ class SaprovController extends Controller
                     ->whereIn('sf.NroSerial', $serialesCompra)
                     ->where('ifac.CodItem', $codprod)
                     ->whereIn('ifac.TipoFac', ['A', 'B'])
+                    ->where('ifac.esserv', 0)
                     ->whereRaw("ifac.fk_sucursal in ($sucursalIds)")
                     ->whereBetween('ifac.FechaE', [$fecha_desde . ' 00:00:00', $fecha_hasta . ' 23:59:59'])
                     ->select(
                         'ifac.fk_sucursal',
-                        DB::raw("SUM(ifac.cantidad * ifac.signo) as unidades")
+                        DB::raw("SUM(ifac.signo) as unidades")
                     )
                     ->groupBy('ifac.fk_sucursal')
                     ->orderByDesc('unidades')
@@ -1126,6 +1162,7 @@ class SaprovController extends Controller
             $ventasPorDia = Saitemfac::where('CodItem', $codprod)
                 ->whereRaw("fk_sucursal in ($sucursalIds)")
                 ->whereIn('TipoFac', ['A', 'B'])
+                ->where('esserv', 0)
                 ->whereBetween('FechaE', [$fecha_desde . ' 00:00:00', $fecha_hasta . ' 23:59:59'])
                 ->select(
                     DB::raw("DATE(FechaE) as fecha"),
@@ -1140,6 +1177,7 @@ class SaprovController extends Controller
             $ventasPorSuc = Saitemfac::where('CodItem', $codprod)
                 ->whereRaw("fk_sucursal in ($sucursalIds)")
                 ->whereIn('TipoFac', ['A', 'B'])
+                ->where('esserv', 0)
                 ->whereBetween('FechaE', [$fecha_desde . ' 00:00:00', $fecha_hasta . ' 23:59:59'])
                 ->select(
                     'fk_sucursal',
@@ -1151,7 +1189,7 @@ class SaprovController extends Controller
         }
 
         // ============================================================
-        // Armado del array de días (rellenando los días sin venta)
+        // Armado del array de días
         // ============================================================
         $dias = [];
         $inicio = Carbon::parse($fecha_desde);
@@ -1173,7 +1211,7 @@ class SaprovController extends Controller
         }
 
         // ============================================================
-        // Armado del array por sucursal
+        // Armado por sucursal
         // ============================================================
         $sucursalesData = [];
         foreach ($ventasPorSuc as $item) {
@@ -1188,13 +1226,11 @@ class SaprovController extends Controller
             ];
         }
 
-        // Producto
         $producto = Saprod::where('codprod', $codprod)
             ->where('comercial', $comercial)
             ->select('codprod', 'descrip', 'marca')
             ->first();
 
-        // Mejor día / mejor sucursal
         $mejorDia = collect($dias)->sortByDesc('unidades')->first();
         $mejorSucursal = count($sucursalesData) > 0
             ? collect($sucursalesData)->sortByDesc('unidades')->first()
@@ -1227,11 +1263,10 @@ class SaprovController extends Controller
             $comercial = 1;
         }
 
-        $sucursales = Sasucursal::where("fk_comercial", $comercial)->get();
+        $sucursales  = Sasucursal::where("fk_comercial", $comercial)->get();
         $sucursalarr = $sucursales->pluck('id');
         $sucursalIds = implode(",", $sucursalarr->toArray());
 
-        // Obtener todos los códigos de productos que ha comprado este proveedor
         $codigos_productos = Saitemcom::where('codprov', $codprov)
             ->whereRaw("fk_sucursal in ($sucursalIds)")
             ->whereIn('tipocom', ['H', 'I'])
@@ -1248,7 +1283,6 @@ class SaprovController extends Controller
             ->select('codprod', 'descrip', 'preciod', 'costod', 'existen', 'codinst')
             ->get();
 
-        // Pre-cargar información de seriales para todos los productos
         $serialesPorProducto = [];
         foreach ($productosModels as $productoModel) {
             $serialesPorProducto[$productoModel->codprod] = $this->getSerialesCompraPorProducto(
@@ -1262,18 +1296,16 @@ class SaprovController extends Controller
 
         foreach ($productosModels as $productoModel) {
             $producto = new \stdClass();
-            $producto->codprod = $productoModel->codprod;
-            $producto->descrip = $productoModel->descrip;
-            $producto->preciod = $productoModel->preciod;
-            $producto->costod = $productoModel->costod;
-            $producto->existen = $productoModel->existen;
-            $producto->codinst = $productoModel->codinst;
+            $producto->codprod    = $productoModel->codprod;
+            $producto->descrip    = $productoModel->descrip;
+            $producto->preciod    = $productoModel->preciod;
+            $producto->costod     = $productoModel->costod;
+            $producto->existen    = $productoModel->existen;
+            $producto->codinst    = $productoModel->codinst;
 
-            // ========== VENTAS FILTRADAS POR PROVEEDOR ==========
             $infoSerial = $this->getProductoSerialInfo($producto->codprod, $comercial);
 
             if ($infoSerial['usa_serial']) {
-                // Productos CON serial: solo contar ventas de seriales comprados a este proveedor
                 $serialesCompra = $serialesPorProducto[$producto->codprod] ?? collect([]);
 
                 if ($serialesCompra->isNotEmpty()) {
@@ -1285,39 +1317,42 @@ class SaprovController extends Controller
                         $sucursalIds
                     );
 
-                    $producto->unidades_vendidas = $itemsVenta->where('signo', '>', 0)->sum('cantidad');
+                    // SUM(signo): 1 por serial vendido, resta devoluciones
+                    $producto->unidades_vendidas = $itemsVenta->sum(function ($item) {
+                        return (int) $item->signo;
+                    });
+
                     $producto->monto_ventas = $itemsVenta->sum(function ($item) {
-                        return $item->costodoriginal * $item->cantidad;
+                        return $item->costodoriginal * $item->signo;
                     });
                 } else {
                     $producto->unidades_vendidas = 0;
-                    $producto->monto_ventas = 0;
+                    $producto->monto_ventas      = 0;
                 }
             } else {
-                // Productos SIN serial: no podemos distinguir, se cuentan todas las ventas
                 $producto->unidades_vendidas = Saitemfac::where('CodItem', $producto->codprod)
                     ->whereRaw("fk_sucursal in ($sucursalIds)")
                     ->whereIn('TipoFac', ['A', 'B'])
-                    ->whereBetween('FechaE', [$fecha_desde.' 00:00:00.00', $fecha_hasta.' 23:59:58.00'])
-                    ->select(DB::raw('SUM(  cantidad * signo) as cantidad') )
+                    ->where('esserv', 0)
+                    ->whereBetween('FechaE', [$fecha_desde . ' 00:00:00.00', $fecha_hasta . ' 23:59:59.00'])
+                    ->select(DB::raw('SUM(cantidad * signo) as cantidad'))
                     ->value('cantidad') ?? 0;
 
                 $producto->monto_ventas = Saitemfac::where('CodItem', $producto->codprod)
                     ->whereRaw("fk_sucursal in ($sucursalIds)")
                     ->whereIn('TipoFac', ['A', 'B'])
-                    ->whereBetween('FechaE', [$fecha_desde.' 00:00:00.00', $fecha_hasta.' 23:59:58.00'])
+                    ->where('esserv', 0)
+                    ->whereBetween('FechaE', [$fecha_desde . ' 00:00:00.00', $fecha_hasta . ' 23:59:59.00'])
                     ->select(DB::raw('SUM(costodoriginal * signo) as total'))
                     ->value('total') ?? 0;
             }
 
             $producto->rotacion = $producto->existen > 0 ? $producto->unidades_vendidas / $producto->existen : 0;
 
-            // Calcular días de stock
-            $dias_periodo = Carbon::parse($fecha_desde.' 00:00:00.00')->diffInDays(Carbon::parse($fecha_hasta.' 23:59:58.00')) + 1;
+            $dias_periodo = Carbon::parse($fecha_desde . ' 00:00:00.00')->diffInDays(Carbon::parse($fecha_hasta . ' 23:59:59.00')) + 1;
             $venta_diaria = $dias_periodo > 0 ? $producto->unidades_vendidas / $dias_periodo : 0;
             $producto->dias_stock = $venta_diaria > 0 ? $producto->existen / $venta_diaria : 0;
 
-            // Calcular margen
             $producto->margen = $producto->costod > 0
                 ? (($producto->preciod - $producto->costod) / $producto->costod) * 100
                 : 0;
@@ -1409,6 +1444,346 @@ class SaprovController extends Controller
             ->orderBy('margen', 'desc')
             ->limit($limite)
             ->get();
+    }
+
+    /**
+     * Análisis gerencial GLOBAL de Cuentas por Pagar (todos los proveedores)
+     * Devuelve: ranking de proveedores, priorización de facturas, KPIs, alertas, proyección.
+     */
+    public function analisisGerencialGlobalCxp(Request $request)
+    {
+        $soloVencidos = $request->boolean('solovencidos', false);
+        $fechaCorte   = $request->filled('fechavence')
+            ? Carbon::createFromFormat('d/m/Y', $request->fechavence)->format('Y-m-d')
+            : null;
+
+        $comercial   = session('comercialid') ?: 1;
+        $sucursalIds = Sasucursal::where('fk_comercial', $comercial)->pluck('id')->toArray();
+        $sucursalStr = implode(',', $sucursalIds);
+        $hoy         = Carbon::now()->startOfDay();
+
+        // ==========================================
+        // 1. TODAS LAS FACTURAS PENDIENTES (globales)
+        // ==========================================
+        $qFacturas = Cwcxcprv::where('signo', 1)
+            ->whereRaw('(monto - abonado) > 0')
+            ->select(
+                'id', 'codprov', 'numerod', 'concepto', 'monto', 'abonado',
+                DB::raw('(monto - abonado) as deuda'),
+                'fecha', 'fechav'
+            );
+
+        if ($soloVencidos) {
+            $qFacturas->whereDate('fechav', '<', $hoy);
+        }
+        if ($fechaCorte) {
+            $qFacturas->whereDate('fechav', '>=', $fechaCorte);
+        }
+
+        $facturas = $qFacturas->get();
+
+        if ($facturas->isEmpty()) {
+            return response()->json([
+                'success' => true,
+                'data'    => $this->estructuraGlobalVacia(),
+            ]);
+        }
+
+        $codprovs = $facturas->pluck('codprov')->unique()->values()->toArray();
+
+        // ==========================================
+        // 2. DATOS DE CONTEXTO DE LOS PROVEEDORES
+        // ==========================================
+        $proveedoresInfo = Saprov::whereIn('codprov', $codprovs)
+            ->select('codprov', 'descrip', 'id3')
+            ->get()
+            ->keyBy('codprov');
+
+        // Historial de compras últimos 12 meses (criticidad)
+        $hace12m = now()->subMonths(12)->format('Y-m-d');
+        $historiales = Saitemcom::whereIn('codprov', $codprovs)
+            ->whereRaw("fk_sucursal in ($sucursalStr)")
+            ->whereIn('tipocom', ['H', 'I'])
+            ->where('fechae', '>=', $hace12m)
+            ->select(
+                'codprov',
+                DB::raw('COUNT(DISTINCT numerod) as total_facturas'),
+                DB::raw('SUM(cantidad * preciod * signo) as monto_total'),
+                DB::raw('MAX(fechae) as ultima_compra')
+            )
+            ->groupBy('codprov')
+            ->get()
+            ->keyBy('codprov');
+
+        // ==========================================
+        // 3. AGREGACIÓN POR PROVEEDOR
+        // ==========================================
+        $porProveedor = [];
+        $totalDeudaGlobal = $facturas->sum('deuda');
+        $totalFacturasGlobal = $facturas->count();
+
+        foreach ($facturas->groupBy('codprov') as $codprov => $facts) {
+            $info = $proveedoresInfo->get($codprov);
+            $hist = $historiales->get($codprov);
+
+            $deudaProv       = $facts->sum('deuda');
+            $montoProv       = $facts->sum('monto');
+            $abonadoProv     = $facts->sum('abonado');
+            $numFacturas     = $facts->count();
+
+            // Facturas vencidas
+            $facturasProv    = $facts->map(function ($f) use ($hoy) {
+                $fechaVence   = Carbon::parse($f->fechav)->startOfDay();
+                $diasVencidos = $fechaVence->lt($hoy) ? $fechaVence->diffInDays($hoy) : 0;
+                $diasPorVencer = $fechaVence->gte($hoy) ? $hoy->diffInDays($fechaVence) : 0;
+                return [
+                    'id'              => $f->id,
+                    'numerod'         => $f->numerod,
+                    'concepto'        => $f->concepto,
+                    'monto'           => (float) $f->monto,
+                    'abonado'         => (float) $f->abonado,
+                    'deuda'           => (float) $f->deuda,
+                    'fecha_fmt'       => Carbon::parse($f->fecha)->format('d/m/Y'),
+                    'fechav_fmt'      => $fechaVence->format('d/m/Y'),
+                    'fechav'          => $f->fechav,
+                    'dias_vencidos'   => $diasVencidos,
+                    'dias_por_vencer' => $diasPorVencer,
+                ];
+            })->sortByDesc('dias_vencidos')->values();
+
+            $vencidoProv     = $facturasProv->where('dias_vencidos', '>', 0)->sum('deuda');
+            $facturasVencidas = $facturasProv->where('dias_vencidos', '>', 0)->count();
+            $diasVencidoMax  = $facturasProv->max('dias_vencidos') ?? 0;
+            $edadPromedio    = $facturasProv->where('dias_vencidos', '>', 0)->avg('dias_vencidos') ?? 0;
+
+            // Porcentaje que representa este proveedor del total global
+            $porcentajeGlobal = $totalDeudaGlobal > 0
+                ? round(($deudaProv / $totalDeudaGlobal) * 100, 1)
+                : 0;
+
+            $facturas12m     = (int)   ($hist->total_facturas ?? 0);
+            $monto12m        = (float) ($hist->monto_total ?? 0);
+            $ultimaCompra    = $hist->ultima_compra ?? null;
+            $diasUltimaCompra = $ultimaCompra
+                ? Carbon::parse($ultimaCompra)->diffInDays($hoy)
+                : null;
+
+            // ==========================================
+            // SCORE GERENCIAL DEL PROVEEDOR (0-100)
+            // ==========================================
+            // a) Antigüedad máxima vencida       → 35 pts
+            // b) % de deuda vencida sobre su total → 25 pts
+            // c) Concentración global (peso)     → 20 pts
+            // d) Criticidad (compras 12m)        → 10 pts
+            // e) Penalización por inactividad    → 10 pts
+            $score = 0;
+            $score += min(35, $diasVencidoMax);                                       // a
+            $score += $deudaProv > 0
+                ? min(25, ($vencidoProv / $deudaProv) * 25)
+                : 0;                                                                  // b
+            $score += min(20, $porcentajeGlobal * 2);                                 // c
+            if ($facturas12m >= 10)     $score += 10;
+            elseif ($facturas12m >= 3)  $score += 5;
+            if ($diasUltimaCompra !== null && $diasUltimaCompra > 90) $score += 10;    // e
+
+            $score = round(min(100, $score), 1);
+
+            // Categoría
+            if ($diasVencidoMax >= 30 || $score >= 75)      $categoria = 'critica';
+            elseif ($diasVencidoMax > 0 || $score >= 50)    $categoria = 'alta';
+            elseif ($score >= 30)                            $categoria = 'media';
+            else                                             $categoria = 'baja';
+
+            $porProveedor[] = [
+                'codprov'          => $codprov,
+                'empresa'          => $info->descrip ?? $codprov,
+                'id3'              => $info->id3 ?? null,
+                'deuda'            => round($deudaProv, 2),
+                'monto'            => round($montoProv, 2),
+                'abonado'          => round($abonadoProv, 2),
+                'num_facturas'     => $numFacturas,
+                'num_vencidas'     => $facturasVencidas,
+                'deuda_vencida'    => round($vencidoProv, 2),
+                'porcentaje_global'=> $porcentajeGlobal,
+                'porcentaje_vencido'=> $deudaProv > 0 ? round(($vencidoProv / $deudaProv) * 100, 1) : 0,
+                'dias_vencido_max' => $diasVencidoMax,
+                'edad_promedio'    => round($edadPromedio, 0),
+                'facturas_12m'     => $facturas12m,
+                'monto_12m'        => round($monto12m, 2),
+                'dias_ultima_compra' => $diasUltimaCompra,
+                'score'            => $score,
+                'categoria'        => $categoria,
+                'facturas'         => $facturasProv,
+            ];
+        }
+
+        // Ordenar proveedores por score descendente
+        usort($porProveedor, fn($a, $b) => $b['score'] <=> $a['score']);
+
+        // Ranking
+        foreach ($porProveedor as $i => &$p) {
+            $p['ranking'] = $i + 1;
+        }
+        unset($p);
+
+        // ==========================================
+        // 4. KPIs GLOBALES
+        // ==========================================
+        $totalVencido     = $facturas->filter(fn($f) => Carbon::parse($f->fechav)->lt($hoy))->sum('deuda');
+        $totalPorVencer7d = $facturas->filter(function ($f) use ($hoy) {
+            $v = Carbon::parse($f->fechav)->startOfDay();
+            return $v->gte($hoy) && $hoy->diffInDays($v) <= 7;
+        })->sum('deuda');
+
+        $kpis = [
+            'total_deuda'            => round($totalDeudaGlobal, 2),
+            'total_vencido'          => round($totalVencido, 2),
+            'total_por_vencer_7d'    => round($totalPorVencer7d, 2),
+            'total_proveedores'      => count($porProveedor),
+            'total_facturas'         => $totalFacturasGlobal,
+            'proveedores_criticos'   => collect($porProveedor)->where('categoria', 'critica')->count(),
+            'porcentaje_vencido'     => $totalDeudaGlobal > 0
+                ? round(($totalVencido / $totalDeudaGlobal) * 100, 1) : 0,
+            'proveedor_mas_critico'  => $porProveedor[0]['empresa'] ?? null,
+            'deuda_top5'             => round(collect($porProveedor)->take(5)->sum('deuda'), 2),
+            'porcentaje_top5'        => $totalDeudaGlobal > 0
+                ? round((collect($porProveedor)->take(5)->sum('deuda') / $totalDeudaGlobal) * 100, 1) : 0,
+        ];
+
+        // ==========================================
+        // 5. ALERTAS GLOBALES
+        // ==========================================
+        $alertas = [];
+
+        if ($totalVencido > 0) {
+            $alertas[] = [
+                'tipo'    => 'danger',
+                'icono'   => 'ri-alarm-warning-line',
+                'titulo'  => 'Deuda vencida global',
+                'mensaje' => '$' . number_format($totalVencido, 2) . ' vencidos con '
+                    . collect($porProveedor)->sum('num_vencidas') . ' factura(s) en '
+                    . collect($porProveedor)->where('num_vencidas', '>', 0)->count() . ' proveedor(es).',
+            ];
+        }
+
+        if ($kpis['porcentaje_vencido'] >= 40) {
+            $alertas[] = [
+                'tipo'    => 'danger',
+                'icono'   => 'ri-error-warning-line',
+                'titulo'  => 'Concentración crítica',
+                'mensaje' => 'El ' . $kpis['porcentaje_vencido'] . '% del pasivo total está vencido. Priorizar cobranza/pagos urgente.',
+            ];
+        }
+
+        if ($kpis['porcentaje_top5'] >= 60) {
+            $alertas[] = [
+                'tipo'    => 'warning',
+                'icono'   => 'ri-pie-chart-line',
+                'titulo'  => 'Riesgo de concentración',
+                'mensaje' => 'Los 5 proveedores principales concentran el ' . $kpis['porcentaje_top5'] . '% del pasivo.',
+            ];
+        }
+
+        $inactivosConDeuda = collect($porProveedor)->filter(
+            fn($p) => $p['dias_ultima_compra'] !== null && $p['dias_ultima_compra'] > 90 && $p['deuda'] > 0
+        )->count();
+
+        if ($inactivosConDeuda > 0) {
+            $alertas[] = [
+                'tipo'    => 'warning',
+                'icono'   => 'ri-pause-circle-line',
+                'titulo'  => 'Proveedores inactivos con deuda',
+                'mensaje' => $inactivosConDeuda . ' proveedor(es) sin compras hace +90 días pero con saldo pendiente.',
+            ];
+        }
+
+        if ($totalPorVencer7d > 0) {
+            $alertas[] = [
+                'tipo'    => 'info',
+                'icono'   => 'ri-calendar-event-line',
+                'titulo'  => 'Vencimientos próximos',
+                'mensaje' => '$' . number_format($totalPorVencer7d, 2) . ' vencen esta semana.',
+            ];
+        }
+
+        if (!empty($porProveedor)) {
+            $top = $porProveedor[0];
+            $alertas[] = [
+                'tipo'    => 'warning',
+                'icono'   => 'ri-fire-line',
+                'titulo'  => 'Prioridad #1',
+                'mensaje' => $top['empresa'] . ' — $' . number_format($top['deuda'], 2)
+                    . ' (' . $top['dias_vencido_max'] . ' días vencido, score ' . $top['score'] . ').',
+            ];
+        }
+
+        // ==========================================
+        // 6. PROYECCIÓN GLOBAL 30 DÍAS
+        // ==========================================
+        $proyeccion = [];
+        for ($i = 0; $i <= 30; $i++) {
+            $fecha = Carbon::now()->addDays($i)->startOfDay();
+            $montoDia = $facturas->filter(function ($f) use ($fecha) {
+                return Carbon::parse($f->fechav)->startOfDay()->equalTo($fecha);
+            })->sum('deuda');
+
+            $proyeccion[] = [
+                'fecha' => $fecha->format('Y-m-d'),
+                'label' => $fecha->format('d/m'),
+                'monto' => round($montoDia, 2),
+            ];
+        }
+
+        // ==========================================
+        // 7. TOP 20 FACTURAS GLOBALES (para pago inmediato)
+        // ==========================================
+        $todasFacturas = collect();
+        foreach ($porProveedor as $p) {
+            foreach ($p['facturas'] as $f) {
+                $f['codprov'] = $p['codprov'];
+                $f['empresa'] = $p['empresa'];
+                // Score individual de factura
+                $scoreF = min(100, (
+                    min(40, $f['dias_vencidos']) +
+                    ($f['dias_vencidos'] == 0 ? max(0, 20 - $f['dias_por_vencer']) : 0) +
+                    min(25, ($f['deuda'] / max(1, $totalDeudaGlobal)) * 100 * 5) +
+                    ($p['categoria'] === 'critica' ? 15 : ($p['categoria'] === 'alta' ? 8 : 0))
+                ));
+                $f['score_factura'] = round($scoreF, 1);
+                $todasFacturas->push($f);
+            }
+        }
+        $topFacturas = $todasFacturas->sortByDesc('score_factura')->take(20)->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'kpis'             => $kpis,
+                'alertas'          => $alertas,
+                'proveedores'      => $porProveedor,
+                'top_facturas'     => $topFacturas,
+                'proyeccion'       => $proyeccion,
+            ],
+        ]);
+    }
+
+    /**
+     * Estructura vacía para reutilizar
+     */
+    private function estructuraGlobalVacia()
+    {
+        return [
+            'kpis' => [
+                'total_deuda' => 0, 'total_vencido' => 0, 'total_por_vencer_7d' => 0,
+                'total_proveedores' => 0, 'total_facturas' => 0, 'proveedores_criticos' => 0,
+                'porcentaje_vencido' => 0, 'proveedor_mas_critico' => null,
+                'deuda_top5' => 0, 'porcentaje_top5' => 0,
+            ],
+            'alertas'      => [],
+            'proveedores'  => [],
+            'top_facturas' => [],
+            'proyeccion'   => [],
+        ];
     }
 
     /**
@@ -1548,13 +1923,10 @@ class SaprovController extends Controller
         ));
     }
 
-    /**
-     * Obtener resumen general de cuentas por pagar de todos los proveedores
-     */
     public function getResumenGeneralCuentasPorPagar(Request $request)
     {
         $soloVencidos = $request->get('solovencidos', false);
-        $fechavence = $request->get('fechavence', '');
+        $fechavence   = $request->get('fechavence', '');
 
         $query = Cwcxcprv::where('signo', 1)
             ->whereRaw('(monto - abonado) != 0')
@@ -1578,67 +1950,77 @@ class SaprovController extends Controller
             });
         }
 
-        // Filtrar por fecha de vencimiento
+        // Filtrar por fecha de vencimiento (acepta dd/mm/yyyy, dd-mm-yyyy o yyyy-mm-dd)
         if ($fechavence) {
-            list($dv, $mv, $yv) = explode("/", $fechavence);
-            $fechaVenceFilter = "$yv-$mv-$dv";
-            $query->whereExists(function($q) use ($fechaVenceFilter) {
-                $q->select(DB::raw(1))
-                    ->from('cwcxcprv as c2')
-                    ->whereRaw('c2.codprov = cwcxcprv.codprov')
-                    ->where('c2.signo', 1)
-                    ->whereDate('c2.fechav', '>=', $fechaVenceFilter);
-            });
+            $fechaVenceFilter = null;
+            if (preg_match('/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})$/', $fechavence, $m)) {
+                $fechaVenceFilter = "{$m[3]}-{$m[2]}-{$m[1]}";
+            } elseif (preg_match('/^(\d{4})[\/\-](\d{2})[\/\-](\d{2})$/', $fechavence, $m)) {
+                $fechaVenceFilter = "{$m[1]}-{$m[2]}-{$m[3]}";
+            }
+
+            if ($fechaVenceFilter) {
+                $query->whereExists(function($q) use ($fechaVenceFilter) {
+                    $q->select(DB::raw(1))
+                        ->from('cwcxcprv as c2')
+                        ->whereRaw('c2.codprov = cwcxcprv.codprov')
+                        ->where('c2.signo', 1)
+                        ->whereDate('c2.fechav', '>=', $fechaVenceFilter);
+                });
+            }
         }
 
         $resumen = $query->having('deuda', '>', 0)
             ->orderBy('deuda', 'desc')
             ->get();
 
-        // Agregar nombre del proveedor
         foreach ($resumen as $item) {
             $proveedor = Saprov::where('codprov', $item->codprov)->first();
             $item->empresa = $proveedor ? $proveedor->descrip : $item->codprov;
         }
 
         $totales = [
-            'monto' => $resumen->sum('monto'),
+            'monto'   => $resumen->sum('monto'),
             'abonado' => $resumen->sum('abonado'),
-            'deuda' => $resumen->sum('deuda')
+            'deuda'   => $resumen->sum('deuda'),
         ];
 
         return response()->json([
             'success' => true,
-            'data' => $resumen,
-            'totales' => $totales
+            'data'    => $resumen,
+            'totales' => $totales,
         ]);
     }
 
     public function getCuentasPorPagar($codprov, Request $request)
     {
-        $soloResumen  = (isset($request->soloResumen) )? $request->soloResumen  : '';
-        $solovencidos = (isset($request->solovencidos))? $request->solovencidos : '';
-        $fechavence   = (isset($request->fechavence))  ? $request->fechavence   : '';
+        $soloResumen  = $request->soloResumen  ?? '';
+        $solovencidos = $request->solovencidos ?? '';
+        $fechavence   = $request->fechavence   ?? '';
 
         $query = Cwcxcprv::where('codprov', $codprov)
             ->where('signo', 1)
             ->whereRaw('(monto - abonado) != 0');
 
-        // Filtrar solo vencidos
         if ($solovencidos) {
             $hoy = date('Y-m-d');
             $query->whereDate('fechav', '<', $hoy);
         }
 
-        // Filtrar por fecha de vencimiento
         if ($fechavence) {
-            list($dv, $mv, $yv) = explode("/", $fechavence);
-            $fechaVenceFilter = "$yv-$mv-$dv";
-            $query->whereDate('fechav', '>=', $fechaVenceFilter);
+            $fechaVenceFilter = null;
+            if (preg_match('/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})$/', $fechavence, $m)) {
+                $fechaVenceFilter = "{$m[3]}-{$m[2]}-{$m[1]}";
+            } elseif (preg_match('/^(\d{4})[\/\-](\d{2})[\/\-](\d{2})$/', $fechavence, $m)) {
+                $fechaVenceFilter = "{$m[1]}-{$m[2]}-{$m[3]}";
+            }
+
+            if ($fechaVenceFilter) {
+                $query->whereDate('fechav', '>=', $fechaVenceFilter);
+            }
         }
 
         if ($soloResumen) {
-            // Resumen por proveedor
             $resumen = $query->select(
                 'codprov',
                 DB::raw('SUM(monto) as monto'),
@@ -1647,7 +2029,6 @@ class SaprovController extends Controller
             )->groupBy('codprov')->first();
 
             if ($resumen) {
-                // Obtener nombre del proveedor
                 $proveedor = Saprov::where('codprov', $codprov)->first();
                 $resumen->empresa = $proveedor ? $proveedor->descrip : $codprov;
             }
@@ -1655,10 +2036,9 @@ class SaprovController extends Controller
             return response()->json([
                 'success'     => true,
                 'soloResumen' => true,
-                'data'        => $resumen
+                'data'        => $resumen,
             ]);
         } else {
-            // Detalle de documentos
             $cuentas = $query->select(
                 'id',
                 'numerod',
@@ -1683,7 +2063,7 @@ class SaprovController extends Controller
                 'data'          => $cuentas,
                 'total_monto'   => $totalMonto,
                 'total_abonado' => $totalAbonado,
-                'total_deuda'   => $totalDeuda
+                'total_deuda'   => $totalDeuda,
             ]);
         }
     }

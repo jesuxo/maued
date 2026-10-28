@@ -138,23 +138,6 @@
                         </a>
                     </div>
                 </div>
-
-                <!-- Filtros rápidos -->
-                <div class="mt-3">
-                    <span class="text-white-50 me-2">Filtros rápidos:</span>
-                    <a href="{{ route('proveedores.productos-panel', ['codprov' => $proveedor->codprov, 'fecha_desde' => $fecha_desde, 'fecha_hasta' => $fecha_hasta, 'orden' => $orden, 'filtro' => 'todos']) }}"
-                       class="btn btn-sm {{ (!isset($filtro) || $filtro == 'todos') ? 'btn-light' : 'btn-outline-light' }} me-1">
-                        Todos
-                    </a>
-                    <a href="{{ route('proveedores.productos-panel', ['codprov' => $proveedor->codprov, 'fecha_desde' => $fecha_desde, 'fecha_hasta' => $fecha_hasta, 'orden' => $orden, 'filtro' => 'con_stock']) }}"
-                       class="btn btn-sm {{ isset($filtro) && $filtro == 'con_stock' ? 'btn-success' : 'btn-outline-light' }} me-1">
-                        <i class="ri-stack-line"></i> Con Stock
-                    </a>
-                    <a href="{{ route('proveedores.productos-panel', ['codprov' => $proveedor->codprov, 'fecha_desde' => $fecha_desde, 'fecha_hasta' => $fecha_hasta, 'orden' => $orden, 'filtro' => 'sin_stock']) }}"
-                       class="btn btn-sm {{ isset($filtro) && $filtro == 'sin_stock' ? 'btn-danger' : 'btn-outline-light' }}">
-                        <i class="ri-close-line"></i> Sin Stock
-                    </a>
-                </div>
             </div>
 
             <!-- Alerta de filtro activo -->
@@ -275,25 +258,128 @@
                     </a>
                 </div>
                 <div class="col-md-3">
-                    <div class="kpi-card info">
+                    <div class="kpi-card" style="border-left-color: #dc3545; cursor: pointer;"
+                         id="cardCuentasPorPagar"
+                         data-bs-toggle="modal"
+                         data-bs-target="#cxpProveedorModal"
+                         title="Ver facturas pendientes">
                         <div class="d-flex justify-content-between">
                             <div>
-                                <h6 class="text-muted">Rotación</h6>
-                                <h3 class="kpi-valor">{{ number_format($kpi['rotacion'] ?? 0, 1) }}x</h3>
-                                <small class="text-muted">Días de cobertura</small>
+                                <h6 class="text-muted">Cuentas por Pagar</h6>
+                                <h3 class="kpi-valor text-danger">
+                                    ${{ number_format($cxpKpi['deuda_total'] ?? 0, 2, ',', '.') }}
+                                </h3>
+                                <small class="text-muted">
+                                    {{ $cxpKpi['total_facturas'] ?? 0 }} factura(s) pendiente(s)
+                                </small>
                             </div>
-                            <div class="fs-1 text-info">
-                                <i class="ri-repeat-line"></i>
+                            <div class="fs-1" style="color:#dc3545;">
+                                <i class="ri-bank-card-line"></i>
                             </div>
                         </div>
                         <div class="mt-2">
-                            <div class="progress">
-                                @php
-                                    $rotacion = $kpi['rotacion'] ?? 0;
-                                    $porcentaje = min(100, ($rotacion / 30) * 100);
-                                @endphp
-                                <div class="progress-bar bg-info" style="width: {{ $porcentaje }}%"></div>
+                            @if(($cxpKpi['deuda_vencida'] ?? 0) > 0)
+                                <small class="text-danger fw-bold">
+                                    <i class="ri-alarm-warning-line"></i>
+                                    Vencido: ${{ number_format($cxpKpi['deuda_vencida'], 2, ',', '.') }}
+                                    ({{ $cxpKpi['facturas_vencidas'] }} fact.)
+                                </small>
+                            @elseif(($cxpKpi['total_facturas'] ?? 0) > 0)
+                                <small class="text-success">
+                                    <i class="ri-check-line"></i> Sin vencimientos
+                                </small>
+                            @else
+                                <small class="text-muted">
+                                    <i class="ri-check-double-line"></i> Sin deuda
+                                </small>
+                            @endif
+                            <span class="badge bg-danger float-end">Ver detalle</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Modal de Cuentas por Pagar del Proveedor --}}
+            <div class="modal fade" id="cxpProveedorModal" tabindex="-1" aria-labelledby="cxpProveedorModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-xl modal-dialog-scrollable modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header bg-danger text-white">
+                            <div>
+                                <h5 class="modal-title text-white mb-0" id="cxpProveedorModalLabel">
+                                    <i class="ri-bank-card-line"></i> Cuentas por Pagar — {{ $proveedor->descrip }}
+                                </h5>
+                                <small class="text-white-50" id="cxpProveedorSubtitle"></small>
                             </div>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <!-- KPIs -->
+                            <div class="row g-2 mb-3">
+                                <div class="col-md-3 col-6">
+                                    <div class="p-2 rounded text-center" style="background:#ffeaea;">
+                                        <small class="text-muted d-block">Deuda Total</small>
+                                        <strong class="fs-5 text-danger" id="cxpKpiDeuda">$0</strong>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 col-6">
+                                    <div class="p-2 rounded text-center" style="background:#fff3e0;">
+                                        <small class="text-muted d-block">Total Facturado</small>
+                                        <strong class="fs-5" style="color:#fd7e14;" id="cxpKpiMonto">$0</strong>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 col-6">
+                                    <div class="p-2 rounded text-center" style="background:#e8f8f0;">
+                                        <small class="text-muted d-block">Total Abonado</small>
+                                        <strong class="fs-5 text-success" id="cxpKpiAbonado">$0</strong>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 col-6">
+                                    <div class="p-2 rounded text-center" style="background:#eef2ff;">
+                                        <small class="text-muted d-block">Facturas</small>
+                                        <strong class="fs-5 text-primary" id="cxpKpiFacturas">0</strong>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Filtro -->
+                            <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                                <div class="form-check form-switch">
+                                    <input type="checkbox" class="form-check-input" id="cxpSoloVencidos">
+                                    <label class="form-check-label" for="cxpSoloVencidos">Solo vencidos</label>
+                                </div>
+                                <div class="input-group input-group-sm" style="width: 280px;">
+                                    <span class="input-group-text"><i class="ri-search-line"></i></span>
+                                    <input type="text" id="cxpBusqueda" class="form-control" placeholder="Buscar factura o concepto...">
+                                </div>
+                            </div>
+
+                            <!-- Tabla -->
+                            <div class="table-responsive" style="max-height: 450px; overflow-y: auto;">
+                                <table class="table table-sm table-hover mb-0">
+                                    <thead class="table-light" style="position: sticky; top: 0; z-index: 1;">
+                                    <tr>
+                                        <th style="width: 90px;">Emisión</th>
+                                        <th style="width: 90px;">Vence</th>
+                                        <th style="width: 110px;">Documento</th>
+                                        <th>Concepto</th>
+                                        <th class="text-end" style="width: 100px;">Monto</th>
+                                        <th class="text-end" style="width: 100px;">Abonado</th>
+                                        <th class="text-end" style="width: 100px;">Saldo</th>
+                                        <th class="text-center" style="width: 110px;">Estado</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody id="cxpProveedorTableBody">
+                                    <tr><td colspan="8" class="text-center text-muted py-3">Cargando...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="modal-footer d-flex justify-content-between">
+                            <a href="{{ route('proveedores.index', ['codprov' => $proveedor->codprov, 'tab' => 'tab6']) }}"
+                               class="btn btn-outline-danger btn-sm">
+                                <i class="ri-external-link-line"></i> Ir a Cuentas por Pagar completo
+                            </a>
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
                         </div>
                     </div>
                 </div>
@@ -1041,6 +1127,142 @@
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
     <script>
+
+        // ============================================================
+        // MODAL CUENTAS POR PAGAR DEL PROVEEDOR
+        // ============================================================
+        const codprovActual = '{{ $proveedor->codprov }}';
+        let cxpDataCache = [];
+        let cxpCargado = false;
+
+        // Al abrir el modal, cargar los datos (solo una vez)
+        $('#cxpProveedorModal').on('show.bs.modal', function() {
+            if (cxpCargado) return;
+
+            $('#cxpProveedorTableBody').html(
+                '<tr><td colspan="8" class="text-center text-muted py-3">' +
+                '<div class="spinner-border spinner-border-sm text-danger me-2"></div>Cargando facturas...</td></tr>'
+            );
+
+            $.ajax({
+                url: `/proveedores/${codprovActual}/cxp-simple`,
+                type: 'GET',
+                success: function(response) {
+                    if (!response.success) {
+                        $('#cxpProveedorTableBody').html(
+                            '<tr><td colspan="8" class="text-center text-danger py-3">Error al cargar datos</td></tr>'
+                        );
+                        return;
+                    }
+
+                    cxpDataCache = response.facturas || [];
+                    cxpCargado = true;
+
+                    // KPIs
+                    const fmt = (v) => Number(v || 0).toLocaleString('es-VE', {
+                        minimumFractionDigits: 2, maximumFractionDigits: 2
+                    });
+
+                    $('#cxpKpiDeuda').text('$' + fmt(response.total_deuda));
+                    $('#cxpKpiMonto').text('$' + fmt(response.total_monto));
+                    $('#cxpKpiAbonado').text('$' + fmt(response.total_abonado));
+                    $('#cxpKpiFacturas').text(response.total_facturas);
+                    $('#cxpProveedorSubtitle').text(
+                        response.total_facturas + ' factura(s) pendiente(s) — Total: $' + fmt(response.total_deuda)
+                    );
+
+                    renderCxpProveedor();
+                },
+                error: function(xhr) {
+                    console.error('[cxpProveedorModal] error:', xhr);
+                    $('#cxpProveedorTableBody').html(
+                        '<tr><td colspan="8" class="text-center text-danger py-3">Error al cargar datos</td></tr>'
+                    );
+                }
+            });
+        });
+
+        // Render con filtros aplicados
+        function renderCxpProveedor() {
+            const soloVencidos = $('#cxpSoloVencidos').is(':checked');
+            const busqueda     = $('#cxpBusqueda').val().trim().toLowerCase();
+            const tokens       = busqueda.split(/\s+/).filter(t => t.length > 0);
+
+            const fmt = (v) => Number(v || 0).toLocaleString('es-VE', {
+                minimumFractionDigits: 2, maximumFractionDigits: 2
+            });
+
+            let rows = '';
+            let visibles = 0;
+            let totalFiltrado = 0;
+
+            cxpDataCache.forEach(function(f) {
+                if (soloVencidos && f.dias_vencidos <= 0) return;
+
+                if (tokens.length > 0) {
+                    const texto = (
+                        (f.numerod || '') + ' ' +
+                        (f.concepto || '') + ' ' +
+                        (f.fechav_fmt || '')
+                    ).toLowerCase();
+                    if (!tokens.every(t => texto.includes(t))) return;
+                }
+
+                visibles++;
+                totalFiltrado += f.deuda;
+
+                // Estado
+                let estadoBadge;
+                if (f.dias_vencidos > 30) {
+                    estadoBadge = `<span class="badge bg-danger">${f.dias_vencidos}d vencido</span>`;
+                } else if (f.dias_vencidos > 0) {
+                    estadoBadge = `<span class="badge bg-warning text-dark">${f.dias_vencidos}d vencido</span>`;
+                } else if (f.dias_por_vencer <= 7) {
+                    estadoBadge = `<span class="badge bg-warning text-dark">Vence en ${f.dias_por_vencer}d</span>`;
+                } else {
+                    estadoBadge = `<span class="badge bg-success">${f.dias_por_vencer}d</span>`;
+                }
+
+                rows += `
+                        <tr class="${f.dias_vencidos > 0 ? 'table-danger' : ''}">
+                            <td><small>${f.fecha_fmt}</small></td>
+                            <td><small>${f.fechav_fmt}</small></td>
+                            <td><strong>${f.numerod || '-'}</strong></td>
+                            <td><small>${f.concepto || '-'}</small></td>
+                            <td class="text-end">$${fmt(f.monto)}</td>
+                            <td class="text-end text-success">$${fmt(f.abonado)}</td>
+                            <td class="text-end fw-bold text-danger">$${fmt(f.deuda)}</td>
+                            <td class="text-center">${estadoBadge}</td>
+                        </tr>
+                    `;
+            });
+
+            if (visibles === 0) {
+                rows = '<tr><td colspan="8" class="text-center text-muted py-3">' +
+                    '<i class="ri-inbox-line fs-3 d-block"></i>Sin facturas que coincidan</td></tr>';
+            }
+
+            rows += `
+                    <tr class="fw-bold table-light">
+                        <td colspan="6" class="text-end">TOTAL FILTRADO:</td>
+                        <td class="text-end text-danger">$${fmt(totalFiltrado)}</td>
+                        <td class="text-center">${visibles} fact.</td>
+                    </tr>
+                `;
+
+            $('#cxpProveedorTableBody').html(rows);
+        }
+
+        // Filtros reactivos
+        $('#cxpSoloVencidos').on('change', renderCxpProveedor);
+        $('#cxpBusqueda').on('input', renderCxpProveedor);
+
+        // Reset al cerrar el modal (opcional, para que siempre recargue fresco)
+        $('#cxpProveedorModal').on('hidden.bs.modal', function() {
+            // Comenta esta línea si prefieres mantener el caché
+            // cxpCargado = false;
+        });
+
         $(document).ready(function() {
 
             $(document).on('click', '.ver-compras-historicas', function () {
