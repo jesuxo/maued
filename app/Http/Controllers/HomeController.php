@@ -1674,7 +1674,7 @@ class HomeController extends Controller
         $arraysucursales = implode(",", $arraysucursales);
 
         $inspadre = ($request->inspadre > 0) ? $request->inspadre : 0;
-        $codalte  = '01.';
+        $codalte  = '1.';
 
         if ($inspadre > 0) {
             $instanciapadre = Sainsta::where('codinst', $inspadre)->first();
@@ -1975,7 +1975,7 @@ class HomeController extends Controller
         $arraysucursales = implode(",",$arraysucursales);
 
         $inspadre = (isset($request->inspadre) and $request->inspadre >0) ? $request->inspadre: 0;
-        $codalte  = '01.';
+        $codalte  = '1.';
 
         if($inspadre>0){
             $instanciapadre = Sainsta::where('codinst',$inspadre)->first();
@@ -2025,7 +2025,7 @@ class HomeController extends Controller
         $fec2 = "$y2-$m2-$d2";
 
         $items = Saitemcom::query()
-            ->whereIn('tipocom', ['U', 'Y'])
+            ->whereIn('tipocom', ['H', 'I'])
             ->whereRaw("fk_sucursal in ($arraysucursales)")
             ->whereBetween('created_at', ["{$fec1} 00:00:00.00", "{$fec2} 23:59:59.00"])
             ->whereHas('sucursal.comercial', fn($q) => $q->where('fk_comercial', $comercialid))

@@ -7,6 +7,7 @@ use App\Http\Controllers\ReporteProveedorController;
 use App\Http\Controllers\SaprovController;
 use App\Http\Controllers\ChatbotController;
 use App\Http\Controllers\SaprodController;
+use App\Http\Controllers\Compras\CompraController;
 use App\Http\Controllers\SadepoController;
 use App\Http\Controllers\ChatConversationController;
 use App\Http\Controllers\CwtokenController;
@@ -218,7 +219,16 @@ Route::middleware(['auth'])->group(function () {
     Route::match(['get','post'],'/tesoro', [TesoroController::class, 'index'])->name('tesoro');
     Route::get('/tesoro/historial', [TesoroController::class, 'historial'])->name('tesoro.historial');
 
-    Route::match(['get','post'],'/reporte/compra', [SacompController::class, 'reportecompra'])->name('reportecompra');
+    Route::prefix('compras')->name('compras.')->group(function () {
+        Route::match(['get', 'post'], '/reporte', [CompraController::class, 'reporte'])->name('reporte');
+        Route::get('/reporte/descargados', [CompraController::class, 'reporteDescargados'])->name('reporte-descargados');
+        Route::match(['get', 'post'], '/reporte', [CompraController::class, 'reporte'])->name('reporte');
+        Route::post('/procesar-documento', [CompraController::class, 'procesarDocumento'])->name('procesar-documento');
+        Route::get('/documento/{id}', [CompraController::class, 'verDocumento'])->name('documento');
+        Route::get('/seriales/{id}', [CompraController::class, 'verSeriales'])->name('seriales');
+        Route::post('/cambiar-status', [CompraController::class, 'cambiarStatus'])->name('cambiar-status');
+    });
+
     Route::post('/compras/documento-ajax', [SacompController::class, 'documentoAjax'])->name('compras.documento-ajax');
 
     Route::resource('compras', SacompController::class);
@@ -415,6 +425,10 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/seriales/{id}/data', [VerificacionSerialController::class, 'getSerial']);
     Route::get('/facturas/detalle-vista/{tipofac}/{numerod}/{fksucu}', [App\Http\Controllers\Facturas\FacturaController::class, 'detalleVista']);
     Route::get('/facturas/detalle/{tipo}/{numero}/{sucursal}', [App\Http\Controllers\Facturas\FacturaController::class, 'detalle']);
+
+    Route::get('operaciones/{codprod}/{serial}', [SerialController::class, 'historial']);
+    Route::match(['get','post'],'/reporte/compra', [CompraController::class, 'reporte'])->name('reportecompra');
+    Route::post('/compras/documento-ajax', [SacompController::class, 'documentoAjax'])->name('compras.documento-ajax');
 
     Route::prefix('transferencias')->group(function () {
         Route::get('/', [TransferenciaController::class, 'index'])->name('transferencias.index');
