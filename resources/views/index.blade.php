@@ -283,6 +283,61 @@
         </div>
     </div>
 
+    <div class="row g-4  ">
+        <div class="col-lg-4">
+            <div class="card dashboard-card  ">
+                <div class="card-header bg-transparent border-0">
+                    <h5 class="section-title mb-0">
+                        <i class="ri-motorbike-fill"></i>
+                        Motos
+                    </h5>
+                </div>
+
+                <div class="card-footer bg-transparent border-0">
+                    <a href="/reporte/motos" class="btn btn-outline-primary w-100">
+                        Ver ventas de motos
+                    </a>
+                </div>
+            </div>
+        </div>
+
+
+        <div class="col-lg-4">
+            <div class="card dashboard-card ">
+                <div class="card-header bg-transparent border-0">
+                    <h5 class="section-title mb-0">
+                        <i class="ri-oil-fill"></i>
+                        Lubricantes
+                    </h5>
+                </div>
+                <div class="card-footer bg-transparent border-0">
+                    <a href="reporte/lubricantes" class="btn btn-outline-secondary w-100">
+                        Ver venta de lubricantes
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card dashboard-card  ">
+                <div class="card-header bg-transparent border-0">
+                    <h5 class="section-title mb-0">
+                        <i class="ri-motorbike-fill"></i>
+                        Repuestos
+                    </h5>
+                </div>
+
+                <div class="card-footer bg-transparent border-0">
+                    <a href="/reporte/repuestos" class="btn btn-outline-primary w-100">
+                        Ver ventas de repuestos
+                    </a>
+                </div>
+            </div>
+        </div>
+
+
+    </div>
+
     <!-- Fila 2: Reportes y Módulos Especiales -->
     <div class="row g-4  ">
         <div class="col-lg-4">
