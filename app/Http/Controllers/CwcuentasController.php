@@ -9,6 +9,39 @@ use Illuminate\Http\Request;
 
 class CwcuentasController extends Controller
 {
+    public function buscarcuentaajax(Request $request)
+    {
+        $iii          = (isset($request->iii)         )? $request->iii          : '';
+        $buscarcuenta = (isset($request->buscarcuenta))? $request->buscarcuenta : '';
+
+        $buscarcuenta = str_replace("*", " ", $buscarcuenta);
+        $buscarcuenta = str_replace("\"", "", $buscarcuenta);
+        $buscarcuenta = str_replace("'", "",  $buscarcuenta);
+
+        $cadena   = '';
+        $numerito = 0;
+        $cuentas  = [];
+
+        if($buscarcuenta != '') {
+            $vector = explode(" ", $buscarcuenta);
+
+            if ($vector) {
+                foreach ($vector as $value) {
+                    if ($numerito > 0) {
+                        $cadena .= ' AND ';
+                    }
+                    $cadena .= "(descrip like '%$value%' or numero like '%$value%')";
+
+                    $numerito++;
+                }
+            }
+
+            if ($cadena) $cadena = " and ($cadena)";
+            $cuentas = Cwcuentas::whereRaw("detalle = 1 and web = 1  $cadena")->limit(50)->get();
+        }
+        return view('layouts.buscarcuentas', compact('cuentas', 'iii', 'buscarcuenta'))->render();
+    }
+
     public function index()
     {
 
@@ -28,6 +61,7 @@ class CwcuentasController extends Controller
         if(isset($cuentas))
             foreach ($cuentas as $cuenta){
                 $aux = Cwcuentas::where(['id' => $cuenta->id])->first();
+
                 if(!$aux){
                     $new = new Cwcuentas();
                     $new->id           = ($cuenta->id)           ?$cuenta->id        : '';
@@ -42,18 +76,18 @@ class CwcuentasController extends Controller
 
                     if($cuenta->banco > 0){
                         $newb = new Cwbancos();
-
                         $newb->id           =  $cuenta->datosbanco->id;
                         $newb->descrip      = ($cuenta->datosbanco->descrip  !='')?$cuenta->datosbanco->descrip   : '';
-                        $newb->fksucursal   =  $sucursalid;
+                        $newb->fksucursal   =  0;
                         $newb->fk_cuenta    =  $cuenta->id;
-                        $newb->recibetransf = ($cuenta->datosbanco->recibetransf !='')?$cuenta->datosbanco->recibetransf : '';
-                        $newb->telefono     = ($cuenta->datosbanco->telefono     !='')?$cuenta->datosbanco->telefono     : '';
-                        $newb->abrev        = ($cuenta->datosbanco->abrev        !='')?$cuenta->datosbanco->abrev        : '';
-                        $newb->sbs          = ($cuenta->datosbanco->sbs       > 0)?$cuenta->datosbanco->sbs       : 0;
-                        $newb->sdolares     = ($cuenta->datosbanco->sdolares  > 0)?$cuenta->datosbanco->sdolares  : 0;
-                        $newb->seuros       = ($cuenta->datosbanco->seuros    > 0)?$cuenta->datosbanco->seuros    : 0;
-                        $newb->spesos       = ($cuenta->datosbanco->spesos    > 0)?$cuenta->datosbanco->spesos    : 0;
+                        $newb->bs           = (isset($cuenta->datosbanco->bs)           and $cuenta->datosbanco->bs           !='')?$cuenta->datosbanco->bs           : 0;
+                        $newb->dolares      = (isset($cuenta->datosbanco->dolares)      and $cuenta->datosbanco->dolares      !='')?$cuenta->datosbanco->dolares      : 0;
+                        $newb->pesos        = (isset($cuenta->datosbanco->pesos)        and $cuenta->datosbanco->pesos        !='')?$cuenta->datosbanco->pesos        : 0;
+                        $newb->recibetransf = (isset($cuenta->datosbanco->recibetransf) and $cuenta->datosbanco->recibetransf !='')?$cuenta->datosbanco->recibetransf : '';
+                        $newb->instpago     = (isset($cuenta->datosbanco->instpago)     and $cuenta->datosbanco->instpago     !='')?$cuenta->datosbanco->instpago      : '';
+                        $newb->telefono     = (isset($cuenta->datosbanco->telefono )    and $cuenta->datosbanco->telefono     !='')?$cuenta->datosbanco->telefono     : '';
+                        $newb->abrev        = (isset($cuenta->datosbanco->abrev)        and $cuenta->datosbanco->abrev        !='')?$cuenta->datosbanco->abrev        : '';
+
                         $newb->save();
                     }
 
@@ -67,9 +101,31 @@ class CwcuentasController extends Controller
                     $aux->save();
 
                     if($aux->banco){
-                        $banco = Cwbancos::where(['fksucursal'=>$sucursalid, 'fk_cuenta'=>$aux->id])->first();
-                        $banco->descrip = $cuenta->descrip;
-                        $banco->save();
+                        $banco = Cwbancos::where([  'fk_cuenta'=>$aux->id])->first();
+                        if(isset($banco) and isset($banco->fk_cuenta)) {
+                            $banco->descrip      = (isset($cuenta->descrip)) ? $cuenta->descrip : '';
+                            $banco->bs           = (isset($cuenta->datosbanco->bs)           and $cuenta->datosbanco->bs           !='')?$cuenta->datosbanco->bs           : 0;
+                            $banco->dolares      = (isset($cuenta->datosbanco->dolares)      and $cuenta->datosbanco->dolares      !='')?$cuenta->datosbanco->dolares      : 0;
+                            $banco->pesos        = (isset($cuenta->datosbanco->pesos)        and $cuenta->datosbanco->pesos        !='')?$cuenta->datosbanco->pesos        : 0;
+                            $banco->recibetransf = (isset($cuenta->datosbanco->recibetransf) and $cuenta->datosbanco->recibetransf !='')?$cuenta->datosbanco->recibetransf : '';
+                            $banco->instpago     = (isset($cuenta->datosbanco->instpago)     and $cuenta->datosbanco->instpago     !='')?$cuenta->datosbanco->instpago      : '';
+                            $banco->save();
+                        }else{
+                            $newb = new Cwbancos();
+                            $newb->id           = $cuenta->datosbanco->id;
+                            $newb->descrip      = ($cuenta->datosbanco->descrip  !='')?$cuenta->datosbanco->descrip   : '';
+                            $newb->fksucursal   = 0;
+                            $newb->fk_cuenta    = $cuenta->id;
+                            $newb->bs           = (isset($cuenta->datosbanco->bs)           and $cuenta->datosbanco->bs           !='')?$cuenta->datosbanco->bs           : 0;
+                            $newb->dolares      = (isset($cuenta->datosbanco->dolares)      and $cuenta->datosbanco->dolares      !='')?$cuenta->datosbanco->dolares      : 0;
+                            $newb->pesos        = (isset($cuenta->datosbanco->pesos)        and $cuenta->datosbanco->pesos        !='')?$cuenta->datosbanco->pesos        : 0;
+                            $newb->recibetransf = (isset($cuenta->datosbanco->recibetransf) and $cuenta->datosbanco->recibetransf !='')?$cuenta->datosbanco->recibetransf : '';
+                            $newb->instpago     = (isset($cuenta->datosbanco->instpago)     and $cuenta->datosbanco->instpago     !='')?$cuenta->datosbanco->instpago      : '';
+                            $newb->telefono     = (isset($cuenta->datosbanco->telefono )    and $cuenta->datosbanco->telefono     !='')?$cuenta->datosbanco->telefono     : '';
+                            $newb->abrev        = (isset($cuenta->datosbanco->abrev)        and $cuenta->datosbanco->abrev        !='')?$cuenta->datosbanco->abrev        : '';
+
+                            $newb->save();
+                        }
                     }
 
                     $aux = Cwcuentasucursal::where(['fk_cuenta' => $cuenta->id, 'fk_sucursal'=>$sucursalid])->first();
@@ -82,11 +138,20 @@ class CwcuentasController extends Controller
                 }
             }
 
-        $cuentas = Cwcuentas::whereRaw("id not in (select fk_cuenta from cwcuentasucursal where fk_sucursal=$sucursalid )")->get();
+        $cuentas = Cwcuentas::with('bancorel')
+            ->whereRaw("id not in (select fk_cuenta from cwcuentasucursal where fk_sucursal=$sucursalid )")->get();
 
         return response()->json(['success'=>'success', 'cuentas' => $cuentas]);
     }
 
+    public function cuentassucu(Request $request){
+        $sucursalid = 5;
+        $cuentas = Cwcuentas::with('bancorel')
+            ->whereRaw("id not in (select fk_cuenta from cwcuentasucursal where fk_sucursal = $sucursalid )")
+            ->get();
+
+        dd($cuentas[0]->bancorel);
+    }
     public function cwcuentasucursal(Request $request)
     {
         $sucursalid = str_replace("300", "", $request->sucursal);
@@ -129,7 +194,7 @@ class CwcuentasController extends Controller
 
     public function update(Request $request, $id)
     {
-         //
+        //
     }
 
     public function destroy($id)
