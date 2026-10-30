@@ -111,7 +111,7 @@
                             <tr style="background-color: {{ $loop->even ? '#eee' : '#fff' }}">
                                 <td class="tdline">
                                     {{ $compra->descrip }}
-                                    @if($compra->tipocom == 'Y')
+                                    @if($compra->tipocom == 'I')
                                         <span style="font-size:10px; color: red!important"> [DEVCOMPRA]</span>
                                     @endif
                                     <br>
@@ -120,16 +120,16 @@
                                         </span>
                                 </td>
                                 <td class="tdline" align="center" >{{ $compra->createdformat }}</td>
-                                <td class="tdline" align="center" style="{{ $compra->tipocom == 'Y' ? 'color: red !important' : '' }}">
-                                    @if($compra->tipocom == 'U')
+                                <td class="tdline" align="center" style="{{ $compra->tipocom == 'I' ? 'color: red !important' : '' }}">
+                                    @if($compra->tipocom == 'H')
                                         <a href="/compra/{{ $compra->id }}" target="_blank">{{ $compra->numerod }}</a>
                                     @else
                                         {{ $compra->numerod }}
                                     @endif
                                 </td>
                                 <td class="tdline" align="center" >{{ $cantidad + 0 }}</td>
-                                <td class="tdline" align="center"  style="{{ $compra->tipocom == 'Y' ? 'color: red !important' : '' }}">
-                                    @if($compra->tipocom == 'U' && $seriales > 0)
+                                <td class="tdline" align="center"  style="{{ $compra->tipocom == 'I' ? 'color: red !important' : '' }}">
+                                    @if($compra->tipocom == 'I' && $seriales > 0)
                                         <a href="/compra/seriales/{{ $compra->id }}" target="_blank">Ver {{ $seriales }}</a>
                                     @endif
                                 </td>
@@ -172,10 +172,10 @@
 
                                 </td>
                                 <td class="tdline" style="color: #0072c5 !important;"  align="center" >
-                                    {{ $compra->tipocom == 'U' ? $compra->ventas + 0 : '' }}
+                                    {{ $compra->tipocom == 'H' ? $compra->ventas + 0 : '' }}
                                 </td>
                                 <td class="tdline" style="color: red !important;"  align="center" >
-                                    {{ $compra->tipocom == 'U' ? $compra->descargas + 0 : '' }}
+                                    {{ $compra->tipocom == 'H' ? $compra->descargas + 0 : '' }}
                                 </td>
                             </tr>
                         @endforeach

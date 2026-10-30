@@ -475,7 +475,7 @@ class CompraService
 
         try {
             // Similar a procesarCompra pero con tipocom = 'U'
-            $datosCompra['tipocom'] = 'U';
+            $datosCompra['tipocom'] = 'H';
             $compra = $this->procesarCompra($pedidoId, $itemsSeleccionados, $datosCompra);
 
             // Marcar items como nota de entrega

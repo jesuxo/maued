@@ -141,8 +141,8 @@ class SerialTrackerService
     {
         if ($tipoMovimiento === 'COMPRA') {
             return match($tipo) {
-                'U' => 'Compra',
-                'Y' => 'Devolución de Compra',
+                'H' => 'Compra',
+                'I' => 'Devolución de Compra',
                 default => 'Compra'
             };
         }

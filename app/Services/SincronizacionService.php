@@ -32,7 +32,7 @@ class SincronizacionService
         // Obtener compras no sincronizadas
         $compras = Sacomp::where('sync', false)
             ->where('fk_sucursal', $sucursalId)
-            ->whereIn('tipocom', ['H', 'U', 'I', 'Y'])
+            ->whereIn('tipocom', ['H', 'I'])
             ->orderBy('id')
             ->limit(50)
             ->get();

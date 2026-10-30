@@ -415,15 +415,15 @@ class CompraController extends Controller
         if ($status !== '') {
             if ($status == 2) {
                 $query->where('status', $status)
-                    ->whereIn('tipocom', ['U'])
+                    ->whereIn('tipocom', ['H'])
                     ->limit(50);
             } else {
-                $query->whereIn('tipocom', ['U', 'Y'])
+                $query->whereIn('tipocom', ['H', 'I'])
                     ->where('status', $status)
                     ->limit(500);
             }
         } else {
-            $query->whereIn('tipocom', ['U', 'Y'])->limit(50);
+            $query->whereIn('tipocom', ['H', 'I'])->limit(50);
         }
 
         return $query;
