@@ -9,7 +9,10 @@ class Cwbancos extends Model
 {
     use HasFactory;
     protected $table    = 'cwbancos';
-    protected $fillable = ['id', 'descrip', 'fksucursal', 'fk_cuenta', 'abrev', 'sbs', 'sdolares', 'seuros','spesos'];
+    protected $fillable = ['id', 'descrip', 'fksucursal', 'fk_cuenta', 'abrev',
+        'sbs', 'sdolares', 'seuros','spesos','instpago',
+        'bs', 'dolares', 'pesos', 'recibetransf'
+    ];
 
     public function cuenta(){
         return $this->belongsTo(Cwcuentas::class, 'id', 'fk_cuenta');

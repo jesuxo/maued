@@ -20,5 +20,9 @@ class Cwcuentas extends Model
         return $this->hasMany(Cwcuentas::class, 'numpadre', 'numero');
     }
 
+    public function bancorel(){
+        return $this->hasOne(Cwbancos::class, 'fk_cuenta', 'id');
+    }
+
 
 }
