@@ -1214,7 +1214,7 @@ class SaprodController extends Controller
 
         $query = DB::table('saprod as productos')
             ->join('sainsta as i', 'productos.codinst', '=', 'i.codinst')
-            ->join('newsaexis as e', 'productos.codprod', '=', 'e.codprod')
+            ->join('saexis as e', 'productos.codprod', '=', 'e.codprod')
             ->join('sasucursal as s', 'e.fk_sucursal', '=', 's.id')
             ->select(
                 'i.inspadre',
@@ -1298,7 +1298,7 @@ class SaprodController extends Controller
 
         // Consulta para obtener existencias en consignación por depósito
         $query = DB::table('saprod as productos')
-            ->join('newsaexis as e', 'productos.codprod', '=', 'e.codprod')
+            ->join('saexis as e', 'productos.codprod', '=', 'e.codprod')
             ->join('sadepo as f', 'f.codubic', '=', 'e.codubic')
             ->join('sasucursal as s', 'e.fk_sucursal', '=', 's.id')
             ->join('sainsta as i', 'productos.codinst', '=', 'i.codinst')
@@ -1423,7 +1423,7 @@ class SaprodController extends Controller
 
         $query = DB::table('saprod as productos')
             ->join('sainsta as i', 'productos.codinst', '=', 'i.codinst')
-            ->join('newsaexis as e', 'productos.codprod', '=', 'e.codprod')
+            ->join('saexis as e', 'productos.codprod', '=', 'e.codprod')
             ->join('sasucursal as s', 'e.fk_sucursal', '=', 's.id')
             ->select(
                 'i.codinst',
@@ -1509,7 +1509,7 @@ class SaprodController extends Controller
 
         $query = DB::table('saprod as productos')
             ->join('sainsta as i', 'productos.codinst', '=', 'i.codinst')
-            ->join('newsaexis as e', 'productos.codprod', '=', 'e.codprod')
+            ->join('saexis as e', 'productos.codprod', '=', 'e.codprod')
             ->join('sadepo as f', 'f.codubic', '=', 'e.codubic')
             ->join('sasucursal as s', 'e.fk_sucursal', '=', 's.id')
             ->select(
