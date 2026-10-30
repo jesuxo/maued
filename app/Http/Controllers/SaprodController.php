@@ -31,6 +31,66 @@ class SaprodController extends Controller
         }
     }
 
+    public function operacionesSerial(Request $request)
+    {
+        $comercialid = session('comercialid');
+        if(!$comercialid) {
+            session(['comercialid' => 1]);
+            $comercialid = 1;
+        }
+
+        $codprod = (isset($request->codprod))? $request->codprod : 'MOT066';
+        $serial  = (isset($request->serial))? $request->serial : 'SC 2752 SM 6925 PLACA AL9T78N';
+        $serial  = urldecode($serial);
+
+        $sucursales = Sasucursal::where("fk_comercial", $comercialid)->get();
+
+        $compras = DB::table('saseprcom')
+            ->select([
+                'id',
+                'tipocom as tipo',
+                'numerod',
+                'created_at',
+                DB::raw("date_format(created_at,'%d/%m/%Y') as fecha"),
+                'fk_sucursal',
+                'coditem',
+                DB::raw("'COMPRA' as tipo_movimiento")
+            ])
+            ->where('nroserial', $serial);
+
+        $ventas = DB::table('saseprfac')
+            ->select([
+                'id',
+                'TipoFac as tipo',
+                'numerod',
+                'created_at',
+                DB::raw("date_format(created_at,'%d/%m/%Y') as fecha"),
+                'fk_sucursal',
+                'coditem',
+                DB::raw("'VENTA' as tipo_movimiento")
+            ])
+            ->where('nroserial', $serial);
+
+        $operaciones = DB::table('sasepropi')
+            ->select([
+                'id',
+                'tipoopi as tipo',
+                'numerod',
+                'created_at',
+                DB::raw("date_format(created_at,'%d/%m/%Y') as fecha"),
+                'fk_sucursal',
+                'coditem',
+                DB::raw("'OPERACION_INVENTARIO' as tipo_movimiento")
+            ])
+            ->where('NroSerial', $serial);
+
+        $operacionesrep = $compras->union($ventas)->union($operaciones)
+            ->orderBy('created_at', 'asc')
+            ->get();
+
+        return view('operaciones-list', compact(  'operacionesrep', 'sucursales', 'codprod', 'serial') );
+    }
+
     public function importarcrear(Request $request)
     {
         $request->validate([
@@ -1297,6 +1357,387 @@ class SaprodController extends Controller
 
     }
 
+    public function existenciasMotos()
+    {
+        $arraysucursales = auth()->user()->getSucursalesIdsComercialActual();
+        $arraysucursales = implode(",",$arraysucursales);
+
+        $comercial  = session('comercialid') ;
+        if(!$comercial) {
+            session(['comercialid' => 1]);
+            $comercial = 1;
+        }
+
+        $instancias = Sainsta::selectRaw("  Descrip as label, descrip, id, nivel, codinst , codalte")
+            ->whereRaw("nivel=2 AND   tipoins=0 and codalte like '01.%'")
+            ->orderBy('descrip','asc')->get();
+
+        $sucursales  = Sasucursal::where("fk_comercial", $comercial)->whereRaw("id in ($arraysucursales)")->get();
+        $sucursalarr = $sucursales->pluck('id');
+        $sucursalIds = implode(",", $sucursalarr->toArray());
+
+        $sucursales  = Sasucursal::where("fk_comercial", $comercial)->get();
+
+
+        $query = DB::table('saprod as productos')
+            ->join('sainsta as i', 'productos.codinst', '=', 'i.codinst')
+            ->join('newsaexis as e', 'productos.codprod', '=', 'e.codprod')
+            ->join('sasucursal as s', 'e.fk_sucursal', '=', 's.id')
+            ->select(
+                'i.inspadre',
+                'e.fk_sucursal',
+                DB::raw('SUM(e.existen) as total_cantidad')
+            )
+            ->where('productos.comercial', $comercial)
+            ->where('i.inspadre', '<>', 104)
+            ->whereRaw("e.fk_sucursal in ($sucursalIds)")
+            ->where('e.existen', '>', 0)
+            ->groupBy('e.fk_sucursal', 'i.inspadre')
+            ->having('total_cantidad', '>', 0)
+            ->orderBy('i.inspadre')
+            ->orderBy('e.fk_sucursal')
+            ->get();
+
+        //$query = DB::select($consulta);
+
+        $vectorsucursales = [];
+        foreach ($sucursales as $sucursal){
+            if(!isset($vectorsucursales[$sucursal->id])){
+                $vectorsucursales[$sucursal->id] = $sucursal->descrip;
+            }
+        }
+
+        $vectorinstancias = [];
+        foreach ($instancias as $instancia){
+            if(!isset($vectorinstancias[$instancia->codinst])){
+                $vectorinstancias[$instancia->codinst] = $instancia->descrip;
+            }
+        }
+
+        $arraysucursal = array();
+        $arrayinstanci = array();
+        $arraycantidad = array();
+
+
+        foreach ($query as $item) {
+            if(!isset($arraysucursal[$item->fk_sucursal]))
+                $arraysucursal[$item->fk_sucursal] = $vectorsucursales[$item->fk_sucursal];
+
+            if(!isset($arrayinstanci[$item->inspadre]) and isset($vectorinstancias[$item->inspadre]))
+                $arrayinstanci[$item->inspadre] = $vectorinstancias[$item->inspadre];
+
+            if(!isset($arraycantidad[$item->inspadre][$item->fk_sucursal]))
+                $arraycantidad[$item->inspadre][$item->fk_sucursal] = 0;
+
+            $arraycantidad[$item->inspadre][$item->fk_sucursal] += $item->total_cantidad;
+        }
+
+        asort($arrayinstanci);
+
+        return view('existenciasMotos', compact( 'arraysucursal', 'arrayinstanci', 'arraycantidad') );
+    }
+
+    public function existenciasMotosConsignacion()
+    {
+        $arraysucursales = auth()->user()->getSucursalesIdsComercialActual();
+        $arraysucursales = implode(",", $arraysucursales);
+
+        $comercial = session('comercialid');
+        if (!$comercial) {
+            session(['comercialid' => 1]);
+            $comercial = 1;
+        }
+
+        // Obtener todos los depósitos en consignación
+        $depositos = DB::table('sadepo')
+            ->where('consignacion', 1)
+            ->where('comercial', $comercial)
+            ->orderBy('descrip')
+            ->get();
+
+        // Obtener sucursales del usuario
+        $sucursales = Sasucursal::where("fk_comercial", $comercial)
+            ->whereRaw("id in ($arraysucursales)")
+            ->orderBy('descrip')
+            ->get();
+
+        $sucursalIds = implode(",", $sucursales->pluck('id')->toArray());
+
+        // Consulta para obtener existencias en consignación por depósito
+        $query = DB::table('saprod as productos')
+            ->join('newsaexis as e', 'productos.codprod', '=', 'e.codprod')
+            ->join('sadepo as f', 'f.codubic', '=', 'e.codubic')
+            ->join('sasucursal as s', 'e.fk_sucursal', '=', 's.id')
+            ->join('sainsta as i', 'productos.codinst', '=', 'i.codinst')
+            ->select(
+                'f.codubic',
+                'f.descrip as deposito_nombre',
+                'e.fk_sucursal',
+                's.descrip as sucursal_nombre',
+                'i.inspadre as marca_id',
+                'i.descrip as marca_nombre',
+                DB::raw('SUM(e.existen) as total_cantidad'),
+                DB::raw('SUM(e.existen * productos.preciod) as total_costo')
+            )
+            ->where('productos.comercial', $comercial)
+            ->whereRaw("e.fk_sucursal in ($sucursalIds)")
+            ->where('f.consignacion', '=', 1)
+            ->where('e.existen', '>', 0)
+            ->groupBy('f.codubic', 'f.descrip', 'e.fk_sucursal', 's.descrip', 'i.inspadre', 'i.descrip')
+            ->having('total_cantidad', '>', 0)
+            ->orderBy('f.descrip')
+            ->orderBy('s.descrip')
+            ->orderBy('i.descrip')
+            ->get();
+
+        // Organizar datos por depósito
+        $datosPorDeposito = [];
+        $totalesDeposito = [];
+        $totalesSucursal = [];
+        $totalesMarca = [];
+        $totalGeneral = 0;
+
+        foreach ($query as $item) {
+            $depositoKey = $item->codubic;
+            $sucursalKey = $item->fk_sucursal;
+            $marcaKey = $item->marca_id;
+
+            // Inicializar estructuras
+            if (!isset($datosPorDeposito[$depositoKey])) {
+                $datosPorDeposito[$depositoKey] = [
+                    'nombre' => $item->deposito_nombre,
+                    'sucursales' => []
+                ];
+            }
+
+            if (!isset($datosPorDeposito[$depositoKey]['sucursales'][$sucursalKey])) {
+                $datosPorDeposito[$depositoKey]['sucursales'][$sucursalKey] = [
+                    'nombre' => $item->sucursal_nombre,
+                    'marcas' => []
+                ];
+            }
+
+            if (!isset($datosPorDeposito[$depositoKey]['sucursales'][$sucursalKey]['marcas'][$marcaKey])) {
+                $datosPorDeposito[$depositoKey]['sucursales'][$sucursalKey]['marcas'][$marcaKey] = [
+                    'nombre' => $item->marca_nombre,
+                    'cantidad' => 0,
+                    'costo' => 0
+                ];
+            }
+
+            // Acumular cantidades
+            $datosPorDeposito[$depositoKey]['sucursales'][$sucursalKey]['marcas'][$marcaKey]['cantidad'] += $item->total_cantidad;
+            $datosPorDeposito[$depositoKey]['sucursales'][$sucursalKey]['marcas'][$marcaKey]['costo'] += $item->total_costo;
+
+            // Totales por depósito
+            if (!isset($totalesDeposito[$depositoKey])) {
+                $totalesDeposito[$depositoKey] = 0;
+            }
+            $totalesDeposito[$depositoKey] += $item->total_cantidad;
+
+            // Totales por sucursal
+            if (!isset($totalesSucursal[$sucursalKey])) {
+                $totalesSucursal[$sucursalKey] = 0;
+            }
+            $totalesSucursal[$sucursalKey] += $item->total_cantidad;
+
+            // Totales por marca
+            if (!isset($totalesMarca[$marcaKey])) {
+                $totalesMarca[$marcaKey] = 0;
+            }
+            $totalesMarca[$marcaKey] += $item->total_cantidad;
+
+            $totalGeneral += $item->total_cantidad;
+        }
+
+        // Ordenar datos
+        ksort($datosPorDeposito);
+
+        return view('existenciasMotosConsignacion', compact(
+            'datosPorDeposito',
+            'depositos',
+            'sucursales',
+            'totalesDeposito',
+            'totalesSucursal',
+            'totalesMarca',
+            'totalGeneral'
+        ));
+    }
+
+    public function existenciasMotosModelos(Request $request)
+    {
+        $arraysucursales = auth()->user()->getSucursalesIdsComercialActual();
+        $arraysucursales = implode(",",$arraysucursales);
+
+        $comercial  = session('comercialid') ;
+        if(!$comercial) {
+            session(['comercialid' => 1]);
+            $comercial = 1;
+        }
+
+        $inspadre   = $request->inspadre;
+
+        $instancias = Sainsta::selectRaw("  Descrip as label, descrip, id, nivel, codinst , codalte")
+            ->whereRaw("nivel=3 AND  inspadre = $inspadre and  tipoins = 0 and codalte like '01.%'")
+            ->orderBy('descrip','asc')->get();
+
+
+        $sucursales  = Sasucursal::where("fk_comercial", $comercial)->whereRaw("id in ($arraysucursales)")->get();
+        $sucursalarr = $sucursales->pluck('id');
+        $sucursalIds = implode(",", $sucursalarr->toArray());
+
+        $sucursales  = Sasucursal::where("fk_comercial", $comercial)->whereRaw("id in ($arraysucursales)")->get();
+
+        $query = DB::table('saprod as productos')
+            ->join('sainsta as i', 'productos.codinst', '=', 'i.codinst')
+            ->join('newsaexis as e', 'productos.codprod', '=', 'e.codprod')
+            ->join('sasucursal as s', 'e.fk_sucursal', '=', 's.id')
+            ->select(
+                'i.codinst',
+                'e.fk_sucursal',
+                DB::raw('SUM(e.existen) as total_cantidad')
+            )
+            ->where('productos.comercial', $comercial)
+            ->whereRaw("e.fk_sucursal in ($sucursalIds)")
+            ->where('e.existen', '>', 0)
+            ->groupBy('e.fk_sucursal','i.codinst')
+            ->having('total_cantidad', '>', 0)
+            ->orderBy('e.fk_sucursal')
+            ->get();
+
+        //$query = DB::select($consulta);
+
+        $vectorsucursales = [];
+        foreach ($sucursales as $sucursal){
+            if(!isset($vectorsucursales[$sucursal->id])){
+                $vectorsucursales[$sucursal->id] = $sucursal->descrip;
+            }
+        }
+
+        $vectorinstancias = [];
+        foreach ($instancias as $instancia){
+            if(!isset($vectorinstancias[$instancia->codinst])){
+                $vectorinstancias[$instancia->codinst] = $instancia->descrip;
+            }
+        }
+
+        $arraysucursal = array();
+        $arrayinstanci = array();
+        $arraycantidad = array();
+
+
+        foreach ($query as $item) {
+            if(!isset($arraysucursal[$item->fk_sucursal]))
+                $arraysucursal[$item->fk_sucursal] = $vectorsucursales[$item->fk_sucursal];
+
+            if(!isset($arrayinstanci[$item->codinst]) and isset($vectorinstancias[$item->codinst]))
+                $arrayinstanci[$item->codinst] = $vectorinstancias[$item->codinst];
+
+            if(!isset($arraycantidad[$item->codinst][$item->fk_sucursal]))
+                $arraycantidad[$item->codinst][$item->fk_sucursal] = 0;
+
+            $arraycantidad[$item->codinst][$item->fk_sucursal] += $item->total_cantidad;
+        }
+
+        asort($arrayinstanci);
+        $ajax = ($request->ajax())? 1 : 0;
+        $html = view('existenciasMotosModelos', compact('ajax', 'inspadre', 'arraysucursal',  'arrayinstanci', 'arraycantidad') )->render();
+
+        if ($ajax){
+            return $html;
+        }else{
+            return  view('existenciasMotosModelosPrint',compact('html'));
+        }
+    }
+
+    public function existenciasMotosModelosConsignacion(Request $request)
+    {
+        $arraysucursales = auth()->user()->getSucursalesIdsComercialActual();
+        $arraysucursales = implode(",",$arraysucursales);
+
+        $comercial  = session('comercialid') ;
+        if(!$comercial) {
+            session(['comercialid' => 1]);
+            $comercial = 1;
+        }
+
+        $inspadre   = $request->inspadre;
+
+        $instancias = Sainsta::selectRaw("  Descrip as label, descrip, id, nivel, codinst , codalte")
+            ->whereRaw("nivel=3 AND  inspadre = $inspadre and  tipoins = 0 and codalte like '01.%'")
+            ->orderBy('descrip','asc')->get();
+
+
+        $sucursales  = Sasucursal::where("fk_comercial", $comercial)->whereRaw("id in ($arraysucursales)")->get();
+        $sucursalarr = $sucursales->pluck('id');
+        $sucursalIds = implode(",", $sucursalarr->toArray());
+
+        $sucursales  = Sasucursal::where("fk_comercial", $comercial)->whereRaw("id in ($arraysucursales)")->get();
+
+        $query = DB::table('saprod as productos')
+            ->join('sainsta as i', 'productos.codinst', '=', 'i.codinst')
+            ->join('newsaexis as e', 'productos.codprod', '=', 'e.codprod')
+            ->join('sadepo as f', 'f.codubic', '=', 'e.codubic')
+            ->join('sasucursal as s', 'e.fk_sucursal', '=', 's.id')
+            ->select(
+                'i.codinst',
+                'e.fk_sucursal',
+                DB::raw('SUM(e.existen) as total_cantidad')
+            )
+            ->where('productos.comercial', $comercial)
+            ->whereRaw("e.fk_sucursal in ($sucursalIds)")
+            ->where('f.consignacion', '=', 1)
+            ->where('e.existen', '>', 0)
+            ->groupBy('e.fk_sucursal','i.codinst')
+            ->having('total_cantidad', '>', 0)
+            ->orderBy('e.fk_sucursal')
+            ->get();
+
+        //$query = DB::select($consulta);
+
+        $vectorsucursales = [];
+        foreach ($sucursales as $sucursal){
+            if(!isset($vectorsucursales[$sucursal->id])){
+                $vectorsucursales[$sucursal->id] = $sucursal->descrip;
+            }
+        }
+
+        $vectorinstancias = [];
+        foreach ($instancias as $instancia){
+            if(!isset($vectorinstancias[$instancia->codinst])){
+                $vectorinstancias[$instancia->codinst] = $instancia->descrip;
+            }
+        }
+
+        $arraysucursal = array();
+        $arrayinstanci = array();
+        $arraycantidad = array();
+
+
+        foreach ($query as $item) {
+            if(!isset($arraysucursal[$item->fk_sucursal]))
+                $arraysucursal[$item->fk_sucursal] = $vectorsucursales[$item->fk_sucursal];
+
+            if(!isset($arrayinstanci[$item->codinst]) and isset($vectorinstancias[$item->codinst]))
+                $arrayinstanci[$item->codinst] = $vectorinstancias[$item->codinst];
+
+            if(!isset($arraycantidad[$item->codinst][$item->fk_sucursal]))
+                $arraycantidad[$item->codinst][$item->fk_sucursal] = 0;
+
+            $arraycantidad[$item->codinst][$item->fk_sucursal] += $item->total_cantidad;
+        }
+
+        asort($arrayinstanci);
+        $ajax = ($request->ajax())? 1 : 0;
+        $html = view('existenciasMotosModelos', compact('ajax', 'inspadre', 'arraysucursal',  'arrayinstanci', 'arraycantidad') )->render();
+
+        if ($ajax){
+            return $html;
+        }else{
+            return  view('existenciasMotosModelosPrint',compact('html'));
+        }
+    }
+
     public function viewprodinstsanciascodalte(Request $request)
     {
         $comercial = session('comercialid');
@@ -1593,16 +2034,15 @@ class SaprodController extends Controller
 
         try {
 
-            $comercial = session('comercialid') ;
-
-            $comercial    = Sacomercial::find($comercial);
+            $comercialid  = session('comercialid') ;
+            $comercial    = Sacomercial::find($comercialid);
             $match        = $comercial->match;
 
             $comerciales = Sacomercial::where('match',$match)->get();
 
-            foreach ($comerciales as $comercial){
+            foreach ($comerciales as $comerciali){
                 $existe = Saprod::where('codprod', $request->codprod)
-                                  ->where('comercial', $comercial)
+                                  ->where('comercial', $comerciali->id)
                                   ->exists();
 
                 if(!$existe){
@@ -1620,7 +2060,7 @@ class SaprodController extends Controller
                         $newprod->costod2 = $request->costod3;
                         $newprod->costod3 = $request->costod3;
                     }
-                    $newprod->comercial = $comercial->id;
+                    $newprod->comercial = $comerciali->id;
                     $newprod->save();
                 }
             }

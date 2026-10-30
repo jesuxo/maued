@@ -331,6 +331,16 @@ Route::middleware(['auth'])->group(function () {
 
     Route::resource('productos', SaprodController::class);
     Route::controller(SaprodController::class)->group(function () {
+
+        Route::get( '/existencia/motos', 'existenciasMotos');
+        Route::post( '/existencia/motos/modelos', 'existenciasMotosModelos');
+        Route::get( '/existencia/motos/modelos/{inspadre}', 'existenciasMotosModelos');
+
+        Route::get( '/existencia/motos/consignacion', 'existenciasMotosConsignacion');
+        Route::post( '/existencia/motos/modelos/consignacion', 'existenciasMotosModelosConsignacion');
+        Route::get( '/existencia/motos/modelos/consignacion/{inspadre}', 'existenciasMotosModelosConsignacion');
+
+
         Route::post('saprod/listprodubiccompany', 'listprodubiccompany')->name('saprod.listprodubiccompany');
         Route::get('saprod/json', 'json');
         Route::match(['get','post'],'sugerir-transferencias', [SaprodController::class, 'sugerirTransferencias'])->name('sugerir-transferencias');
