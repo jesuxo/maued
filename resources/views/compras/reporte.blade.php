@@ -208,7 +208,7 @@
                                 <tr class="{{ $loop->even ? 'table-light' : '' }}">
                                     <td>
                                         <strong>{{ $compra->descrip }}</strong>
-                                        @if($compra->tipocom == 'Y')
+                                        @if($compra->tipocom == 'I')
                                             <span class="badge bg-danger ms-1">DEV</span>
                                         @endif
                                         <br>
@@ -216,7 +216,7 @@
                                     </td>
                                     <td class="text-center">{{ $compra->fechaformat }}</td>
                                     <td class="text-center">
-                                        @if($compra->tipocom == 'U')
+                                        @if($compra->tipocom == 'H')
                                             <a href="{{ route('compras.documento', $compra->id) }}" target="_blank" class="fw-bold">
                                                 {{ $compra->numerod }}
                                             </a>
@@ -292,7 +292,7 @@
                                                 <i class="bi bi-gear"></i>
                                             </button>
                                             <ul class="dropdown-menu">
-                                                @if($compra->tipocom == 'U')
+                                                @if($compra->tipocom == 'H')
                                                     <li>
                                                         <a class="dropdown-item" href="{{ route('compras.documento', $compra->id) }}" target="_blank">
                                                             <i class="bi bi-file-text"></i> Ver Documento

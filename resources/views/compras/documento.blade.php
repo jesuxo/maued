@@ -91,9 +91,9 @@
                                 <div class="card-body p-3">
                                     <small class="text-muted">Tipo</small>
                                     <h6>
-                                        @if($documento->tipocom == 'U')
+                                        @if($documento->tipocom == 'H')
                                             <span class="badge bg-info">Compra</span>
-                                        @elseif($documento->tipocom == 'Y')
+                                        @elseif($documento->tipocom == 'I')
                                             <span class="badge bg-warning">Devolución</span>
                                         @else
                                             {{ $documento->tipocom }}
