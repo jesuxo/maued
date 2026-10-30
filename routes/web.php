@@ -381,6 +381,11 @@ Route::middleware(['auth'])->group(function () {
     Route::match(['get','post'],'/reporte/instpagobs',      [SatarjController::class, 'instpagobs'])->name('instpagobs');
     Route::match(['get','post'],'/reporte/instpagodolares', [SatarjController::class, 'instpagodolares'])->name('instpagodolares');
 
+    Route::match(['get','post'],'/reporte/compra/motos',[HomeController::class, 'reporteCompraMotos'])->name('reporteCompraMotos');
+    Route::match(['get','post'],'/reporte/motos',       [HomeController::class, 'reportemotos'])      ->name('reportemotos');
+    Route::match(['get','post'],'/reporte/lubricantes', [HomeController::class, 'reportelubricantes'])->name('reportelubricantes');
+    Route::match(['get','post'],'/reporte/repuestos',   [HomeController::class, 'reporterepuestos'])  ->name('reporterepuestos');
+
     Route::match(['get','post'],'/reporte/venta', [HomeController::class, 'reporteventa'])->name('reporteventa');
     Route::post('/reporte/venta/sucu', [HomeController::class, 'reporteventasucu'])->name('reporteventasucu');
     Route::get('/cambiarcomercial/{comercialid}', [HomeController::class, 'cambiarcomercial'])->name('cambiarcomercial');
