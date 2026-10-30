@@ -290,51 +290,51 @@
                 <div class="card-header bg-transparent border-0">
                     <h5 class="section-title mb-0">
                         <i class="ph-chart-line"></i>
-                        Resultado General
+                        Motos compradas
                     </h5>
                 </div>
-
                 <div class="card-footer bg-transparent border-0">
-                    <a href="/ventas/resultado" class="btn btn-outline-primary w-100">
-                        Ver detalle completo
+                    <a href="/reporte/compra/motos" class="btn btn-outline-primary w-100">
+                        Ver cantidades compradas
                     </a>
                 </div>
             </div>
         </div>
-        @if(session('comercialid') == 1)
+        @if(Auth::user() and auth()->user()->can('menu_compras'))
             <div class="col-lg-4">
-                <div class="card dashboard-card  ">
+                <div class="card dashboard-card ">
                     <div class="card-header bg-transparent border-0">
                         <h5 class="section-title mb-0">
-                            <i class="ri-cellphone-fill"></i>
-                            Existencias Celulares
+                            <i class="bi bi-file-earmark-spreadsheet-fill"></i>
+                            Chequeo de compras
                         </h5>
                     </div>
-
                     <div class="card-footer bg-transparent border-0">
-                        <a href="/existencia/celulares" class="btn btn-outline-warning w-100">
-                            Gestionar celulares
+                        <a href="reporte/compra" class="btn btn-outline-secondary w-100">
+                            Ver reporte
                         </a>
                     </div>
                 </div>
             </div>
         @endif
         <div class="col-lg-4">
-            <div class="card dashboard-card ">
+            <div class="card dashboard-card  ">
                 <div class="card-header bg-transparent border-0">
                     <h5 class="section-title mb-0">
-                        <i class="bi bi-file-earmark-spreadsheet-fill"></i>
-                        Reporte de Compras
+                        <i class="ri-cellphone-fill text-warning"></i>
+                        Existencias de motos
                     </h5>
                 </div>
 
-                @if(Auth::user() and auth()->user()->can('menu_compras'))
-                    <div class="card-footer bg-transparent border-0">
-                        <a href="/reporte/compra" class="btn btn-outline-secondary w-100">
-                            Ver reporte completo
-                        </a>
-                    </div>
-                @endif
+                <div class="card-footer bg-transparent border-0" style="display: flex; gap: 14px;">
+                    <a href="/existencia/motos" class="btn btn-outline-warning w-100">
+                        Motos x Sucursal
+                    </a>
+                    <a href="/existencia/motos/consignacion" class="btn btn-outline-warning w-100">
+                        Consignaci&oacute;n
+                    </a>
+
+                </div>
             </div>
         </div>
     </div>
@@ -351,7 +351,7 @@
                         </a>
                     @endif
 
-                    @if(session('comercialid') == 1)
+                    @if(session('comercialid') == 1222)
                         <a href="/tesoro" class="quick-action-btn">
                             <i class="ri-add-line"></i>Confirmar Pago movil
                         </a>
@@ -365,15 +365,17 @@
                         <i class="ri-file-chart-line"></i> Rep InstPago USD
                     </a>
 
-                    @if(session('comercialid') == 6)
+                    @if(session('comercialid') == 1)
                         <a href="/pagos-proveedores" class="quick-action-btn">
                             <i class="ri-motorbike-fill"></i> Motos pagas
                         </a>
-                    @endif
 
-                    <a href="/seriales/historial" class="quick-action-btn">
-                        <i class="bi bi-list-ul"></i> Historial Seriales
-                    </a>
+
+                        <a href="/seriales/historial" class="quick-action-btn">
+                            <i class="bi bi-list-ul"></i> Historial Seriales
+                        </a>
+
+                    @endif
 
                     <a href="/cashea" class="quick-action-btn">
                         <i class="bi bi-list-ul"></i> Cashea
