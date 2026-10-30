@@ -16,8 +16,9 @@ class Saitemfac extends Model
 
     public function factura  (){
         return $this->belongsTo(Safact::class, 'NumeroD', 'NumeroD')
-            ->whereRaw('saitemfac.tipofac= safact.tipofac and safact.fk_sucursal = saitemfac.fk_sucursal');
+            ->whereColumn('TipoFac', 'safact.TipoFac');
     }
+
     public function producto  (){
         $comercial = session('comercialid') ;
         return $this->belongsTo(Saprod::class, 'CodItem', 'codprod')
